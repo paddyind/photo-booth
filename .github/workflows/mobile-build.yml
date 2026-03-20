@@ -87,11 +87,11 @@ jobs:
           cd apps/mobile
           npm ci || npm install --legacy-peer-deps
 
-      - name: Set up JDK 21
+      - name: Set up JDK 17 (Android-compatible)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "17"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -101,7 +101,7 @@ jobs:
       - name: Ensure @capacitor/android is installed
         run: |
           cd apps/mobile
-          npm install @capacitor/android --no-save
+          npm install @capacitor/android@5.6.0 --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |
@@ -120,7 +120,7 @@ jobs:
       - name: Build Android APK
         run: |
           cd apps/mobile/android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew clean assembleDebug --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -162,7 +162,7 @@ jobs:
       - name: Ensure @capacitor/ios is installed
         run: |
           cd apps/mobile
-          npm install @capacitor/ios --no-save
+          npm install @capacitor/ios@5.6.0 --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |
@@ -236,7 +236,7 @@ jobs:
       - name: Ensure @capacitor/ios is installed
         run: |
           cd apps/mobile
-          npm install @capacitor/ios --no-save
+          npm install @capacitor/ios@5.6.0 --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |

@@ -3,7 +3,7 @@
   "appName": "photo-booth",
   "webDir": "www",
   "ios": {
-    "deploymentTarget": "13.0"
+    "deploymentTarget": "14.0"
   },
   "bundledWebRuntime": false
 }
