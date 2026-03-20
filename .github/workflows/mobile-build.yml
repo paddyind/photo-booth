@@ -101,7 +101,8 @@ jobs:
       - name: Ensure @capacitor/android is installed
         run: |
           cd apps/mobile
-          npm install @capacitor/android --no-save
+          CAP_VER="$(node -p \"require('./package.json').devDependencies['@capacitor/cli']\" | sed 's/^\\^//')"
+          npm install "@capacitor/android@${CAP_VER}" --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |
@@ -162,7 +163,8 @@ jobs:
       - name: Ensure @capacitor/ios is installed
         run: |
           cd apps/mobile
-          npm install @capacitor/ios --no-save
+          CAP_VER="$(node -p \"require('./package.json').devDependencies['@capacitor/cli']\" | sed 's/^\\^//')"
+          npm install "@capacitor/ios@${CAP_VER}" --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |
@@ -236,7 +238,8 @@ jobs:
       - name: Ensure @capacitor/ios is installed
         run: |
           cd apps/mobile
-          npm install @capacitor/ios --no-save
+          CAP_VER="$(node -p \"require('./package.json').devDependencies['@capacitor/cli']\" | sed 's/^\\^//')"
+          npm install "@capacitor/ios@${CAP_VER}" --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |
