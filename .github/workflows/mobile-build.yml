@@ -1,6 +1,10 @@
 name: Mobile Build (APK + IPA)
 
 on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       build_apk:
@@ -30,8 +34,41 @@ on:
         type: boolean
 
 jobs:
+  validate-web-bundle:
+    name: Validate web bundle (prepare-www)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install mobile dependencies
+        run: |
+          cd apps/mobile
+          npm ci || npm install --legacy-peer-deps
+
+      - name: Prepare mobile www
+        env:
+          PHOTOBOOTH_API_BASE: >-
+            ${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url
+                || vars.PHOTOBOOTH_API_BASE
+                || 'http://YOUR_LAN_IP:8000' }}
+          PHOTOBOOTH_ENABLE_8X11: >-
+            ${{ github.event_name == 'workflow_dispatch' && inputs.enable_8x11
+                || vars.PHOTOBOOTH_ENABLE_8X11
+                || false }}
+        run: |
+          cd apps/mobile
+          npm run prepare-www
+          test -f "www/index.html" || { echo "Missing apps/mobile/www/index.html"; exit 1; }
+
   android-apk:
-    if: ${{ inputs.build_apk }}
+    name: Android APK
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_apk }}
+    needs: validate-web-bundle
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,12 +87,27 @@ jobs:
           cd apps/mobile
           npm ci || npm install --legacy-peer-deps
 
+      - name: Start backend/web (CI Docker warm-up)
+        run: |
+          docker compose -f docker-compose.ci.yml up -d --build backend web
+          echo "Waiting for API to be healthy..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
+              echo "API is healthy."
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/options >/dev/null
+
       - name: Capacitor sync
         run: |
           cd apps/mobile
-          PHOTOBOOTH_API_BASE="${{ inputs.api_base_url }}" PHOTOBOOTH_ENABLE_8X11="${{ inputs.enable_8x11 }}" npm run prepare-www
-          # Ensure native platform exists in CI workspace.
-          npx cap add android
+          PHOTOBOOTH_API_BASE="${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}" \
+          PHOTOBOOTH_ENABLE_8X11="${{ github.event_name == 'workflow_dispatch' && inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}" \
+          npm run prepare-www
+          # Install native Android platform package in CI workspace.
+          npx cap install @capacitor/android
           npx cap sync android
 
       - name: Set up JDK 21
@@ -77,11 +129,13 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
+          name: app-debug-apk-${{ github.run_number }}
           path: apps/mobile/android/app/build/outputs/apk/debug/*.apk
 
   ios-simulator:
-    if: ${{ inputs.build_ios_simulator_app }}
+    name: iOS Simulator (.app)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios_simulator_app }}
+    needs: validate-web-bundle
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -109,11 +163,27 @@ jobs:
           cd apps/mobile
           npm ci || npm install --legacy-peer-deps
 
+      - name: Start backend/web (CI Docker warm-up)
+        run: |
+          docker compose -f docker-compose.ci.yml up -d --build backend web
+          echo "Waiting for API to be healthy..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
+              echo "API is healthy."
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/options >/dev/null
+
       - name: Capacitor sync
         run: |
           cd apps/mobile
-          PHOTOBOOTH_API_BASE="${{ inputs.api_base_url }}" PHOTOBOOTH_ENABLE_8X11="${{ inputs.enable_8x11 }}" npm run prepare-www
-          npx cap add ios
+          PHOTOBOOTH_API_BASE="${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}" \
+          PHOTOBOOTH_ENABLE_8X11="${{ github.event_name == 'workflow_dispatch' && inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}" \
+          npm run prepare-www
+          # Install native iOS platform package in CI workspace.
+          npx cap install @capacitor/ios
           npx cap sync ios
 
       - name: Build iOS Simulator app
@@ -131,11 +201,12 @@ jobs:
       - name: Upload iOS Simulator .app
         uses: actions/upload-artifact@v4
         with:
-          name: ios-simulator-app
+          name: ios-simulator-app-${{ github.run_number }}
           path: apps/mobile/ios/App/build/Build/Products/Debug-iphonesimulator/*.app
 
   ios-ipa:
-    if: ${{ inputs.build_ipa }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_ipa }}
+    needs: validate-web-bundle
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -170,11 +241,26 @@ jobs:
           cd apps/mobile
           npm ci || npm install --legacy-peer-deps
 
+      - name: Start backend/web (CI Docker warm-up)
+        run: |
+          docker compose -f docker-compose.ci.yml up -d --build backend web
+          echo "Waiting for API to be healthy..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
+              echo "API is healthy."
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/options >/dev/null
+
       - name: Capacitor sync
         run: |
           cd apps/mobile
-          PHOTOBOOTH_API_BASE="${{ inputs.api_base_url }}" PHOTOBOOTH_ENABLE_8X11="${{ inputs.enable_8x11 }}" npm run prepare-www
-          npx cap add ios
+          PHOTOBOOTH_API_BASE="${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}" \
+          PHOTOBOOTH_ENABLE_8X11="${{ github.event_name == 'workflow_dispatch' && inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}" \
+          npm run prepare-www
+          npx cap install @capacitor/ios
           npx cap sync ios
 
       - name: Decode signing artifacts
@@ -278,6 +364,6 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa
+          name: ios-ipa-${{ github.run_number }}
           path: apps/mobile/ios/build/export/*.ipa
 

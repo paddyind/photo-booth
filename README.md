@@ -83,6 +83,17 @@ Inputs:
 - `build_ios_simulator_app` (default `true`)
 - `build_ipa` (default `false`)
 - `enable_8x11` (default `false`) to opt-in to showing `8x11` in the mobile UI
+- `api_base_url` controls `PHOTOBOOTH_API_BASE` injection used by the mobile web bundle.
+
+Automatic CI on `push` / `pull_request` uses repository variables (if set):
+- `PHOTOBOOTH_API_BASE` (fallback: `http://YOUR_LAN_IP:8000`)
+- `PHOTOBOOTH_ENABLE_8X11` (fallback: `false`)
+
+CI warm-up:
+- Before `cap sync` builds Android/iOS artifacts, the workflow starts `backend` + `web` using `docker-compose.ci.yml` and waits for `GET /health` and `GET /options`.
+
+Local Docker Desktop:
+- When you test mobile apps locally, run `docker compose up -d backend web` first so the phone/tablet can reach the latest API.
 
 ### Notes about iOS IPA
 
