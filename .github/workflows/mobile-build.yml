@@ -184,25 +184,43 @@ jobs:
       - name: Build iOS Simulator app
         run: |
           cd apps/mobile/ios
-          # Common Capacitor default: App target name is "App"
-          XCODE_PROJECT="App/App.xcodeproj"
-          if [ ! -f "$XCODE_PROJECT" ]; then
-            XCODE_PROJECT="$(ls -1 *.xcodeproj 2>/dev/null | head -n 1)"
+          # Prefer xcworkspace when CocoaPods is installed (Capacitor typically generates it).
+          WORKSPACE="$(ls -1 App/*.xcworkspace 2>/dev/null | head -n 1)"
+          XCODE_PROJECT="$(ls -1 App/*.xcodeproj 2>/dev/null | head -n 1)"
+
+          if [ -z "$WORKSPACE" ] && [ -z "$XCODE_PROJECT" ]; then
+            echo "No Xcode project/workspace found under apps/mobile/ios/App"
+            ls -la App || true
+            exit 1
           fi
+
           SCHEME="App"
-          if [ -f "$XCODE_PROJECT" ]; then
+          if [ -n "$WORKSPACE" ]; then
+            SCHEME_FROM_LIST="$(xcodebuild -list -workspace "$WORKSPACE" 2>/dev/null | /usr/bin/awk '/Schemes:/{getline; print $1; exit}')"
+          else
             SCHEME_FROM_LIST="$(xcodebuild -list -project "$XCODE_PROJECT" 2>/dev/null | /usr/bin/awk '/Schemes:/{getline; print $1; exit}')"
-            if [ -n "$SCHEME_FROM_LIST" ]; then
-              SCHEME="$SCHEME_FROM_LIST"
-            fi
           fi
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$SCHEME" \
-            -sdk iphonesimulator \
-            -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
-            build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+          if [ -n "$SCHEME_FROM_LIST" ]; then
+            SCHEME="$SCHEME_FROM_LIST"
+          fi
+
+          if [ -n "$WORKSPACE" ]; then
+            xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme "$SCHEME" \
+              -sdk iphonesimulator \
+              -configuration Debug \
+              -destination 'generic/platform=iOS Simulator' \
+              build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+          else
+            xcodebuild \
+              -project "$XCODE_PROJECT" \
+              -scheme "$SCHEME" \
+              -sdk iphonesimulator \
+              -configuration Debug \
+              -destination 'generic/platform=iOS Simulator' \
+              build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+          fi
 
       - name: Upload iOS Simulator .app
         uses: actions/upload-artifact@v4
@@ -286,15 +304,16 @@ jobs:
 
           # Expected defaults (adjust these if your iOS project uses different names).
           IOS_DIR="apps/mobile/ios"
-          XCODE_PROJECT="$IOS_DIR/App/App.xcodeproj"
+          WORKSPACE="$(ls -1 "$IOS_DIR/App"/*.xcworkspace 2>/dev/null | head -n 1)"
+          XCODE_PROJECT="$(ls -1 "$IOS_DIR/App"/*.xcodeproj 2>/dev/null | head -n 1)"
           SCHEME="App"
 
-          if [ ! -f "$XCODE_PROJECT" ]; then
-            # Fallback: try any nested .xcodeproj
-            XCODE_PROJECT="$(ls -1 "$IOS_DIR"/*.xcodeproj "$IOS_DIR"/*/*.xcodeproj 2>/dev/null | head -n 1)"
-          fi
-
-          if [ -f "$XCODE_PROJECT" ]; then
+          if [ -n "$WORKSPACE" ]; then
+            SCHEME_FROM_LIST="$(xcodebuild -list -workspace "$WORKSPACE" 2>/dev/null | /usr/bin/awk '/Schemes:/{getline; print $1; exit}')"
+            if [ -n "$SCHEME_FROM_LIST" ]; then
+              SCHEME="$SCHEME_FROM_LIST"
+            fi
+          elif [ -n "$XCODE_PROJECT" ]; then
             SCHEME_FROM_LIST="$(xcodebuild -list -project "$XCODE_PROJECT" 2>/dev/null | /usr/bin/awk '/Schemes:/{getline; print $1; exit}')"
             if [ -n "$SCHEME_FROM_LIST" ]; then
               SCHEME="$SCHEME_FROM_LIST"
@@ -333,16 +352,29 @@ jobs:
 
           # Archive
           rm -rf "$IOS_DIR/build"
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$SCHEME" \
-            -sdk iphoneos \
-            -configuration Release \
-            -archivePath "$IOS_DIR/build/$SCHEME.xcarchive" \
-            clean archive \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="${IOS_TEAM_ID:-}" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+          if [ -n "$WORKSPACE" ]; then
+            xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme "$SCHEME" \
+              -sdk iphoneos \
+              -configuration Release \
+              -archivePath "$IOS_DIR/build/$SCHEME.xcarchive" \
+              clean archive \
+              CODE_SIGN_STYLE=Manual \
+              DEVELOPMENT_TEAM="${IOS_TEAM_ID:-}" \
+              PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+          else
+            xcodebuild \
+              -project "$XCODE_PROJECT" \
+              -scheme "$SCHEME" \
+              -sdk iphoneos \
+              -configuration Release \
+              -archivePath "$IOS_DIR/build/$SCHEME.xcarchive" \
+              clean archive \
+              CODE_SIGN_STYLE=Manual \
+              DEVELOPMENT_TEAM="${IOS_TEAM_ID:-}" \
+              PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+          fi
 
           # Export
           EXPORT_DIR="$IOS_DIR/build/export"
