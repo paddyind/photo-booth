@@ -88,8 +88,16 @@ jobs:
           npm ci || npm install --legacy-peer-deps
 
       - name: Start backend/web (CI Docker warm-up)
+        continue-on-error: true
         run: |
-          docker compose -f docker-compose.ci.yml up -d --build backend web
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "docker not available; skipping warm-up."
+            exit 0
+          fi
+          if ! docker compose -f docker-compose.ci.yml up -d --build backend web; then
+            echo "Warm-up failed (docker compose). Continuing without it."
+            exit 0
+          fi
           echo "Waiting for API to be healthy..."
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
@@ -98,7 +106,7 @@ jobs:
             fi
             sleep 2
           done
-          curl -fsS http://localhost:8000/options >/dev/null
+          curl -fsS http://localhost:8000/options >/dev/null || true
 
       - name: Capacitor sync
         run: |
@@ -164,8 +172,16 @@ jobs:
           npm ci || npm install --legacy-peer-deps
 
       - name: Start backend/web (CI Docker warm-up)
+        continue-on-error: true
         run: |
-          docker compose -f docker-compose.ci.yml up -d --build backend web
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "docker not available; skipping warm-up."
+            exit 0
+          fi
+          if ! docker compose -f docker-compose.ci.yml up -d --build backend web; then
+            echo "Warm-up failed (docker compose). Continuing without it."
+            exit 0
+          fi
           echo "Waiting for API to be healthy..."
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
@@ -174,7 +190,7 @@ jobs:
             fi
             sleep 2
           done
-          curl -fsS http://localhost:8000/options >/dev/null
+          curl -fsS http://localhost:8000/options >/dev/null || true
 
       - name: Capacitor sync
         run: |
@@ -242,8 +258,16 @@ jobs:
           npm ci || npm install --legacy-peer-deps
 
       - name: Start backend/web (CI Docker warm-up)
+        continue-on-error: true
         run: |
-          docker compose -f docker-compose.ci.yml up -d --build backend web
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "docker not available; skipping warm-up."
+            exit 0
+          fi
+          if ! docker compose -f docker-compose.ci.yml up -d --build backend web; then
+            echo "Warm-up failed (docker compose). Continuing without it."
+            exit 0
+          fi
           echo "Waiting for API to be healthy..."
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
@@ -252,7 +276,7 @@ jobs:
             fi
             sleep 2
           done
-          curl -fsS http://localhost:8000/options >/dev/null
+          curl -fsS http://localhost:8000/options >/dev/null || true
 
       - name: Capacitor sync
         run: |

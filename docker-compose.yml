@@ -1,5 +1,8 @@
 services:
   backend:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     image: photo-booth-backend:latest
     pull_policy: never
     container_name: backend
@@ -12,6 +15,9 @@ services:
       - ./shared/frames:/app/shared/frames
 
   web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
     image: photo-booth-web:latest
     pull_policy: never
     container_name: web

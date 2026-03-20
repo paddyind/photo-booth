@@ -1,6 +1,9 @@
-FROM campus-circle-backend@sha256:c15109cd3fbf3910ca1313dfe25182b65ad53770fa601f90bf5ca00b98062469
+FROM python:3.11-slim
 
 WORKDIR /app
+
+COPY apps/api/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r /app/requirements.txt
 
 COPY apps/api /app/apps/api
 

@@ -90,7 +90,8 @@ Automatic CI on `push` / `pull_request` uses repository variables (if set):
 - `PHOTOBOOTH_ENABLE_8X11` (fallback: `false`)
 
 CI warm-up:
-- Before `cap sync` builds Android/iOS artifacts, the workflow starts `backend` + `web` using `docker-compose.ci.yml` and waits for `GET /health` and `GET /options`.
+- Before `cap sync` builds Android/iOS artifacts, the workflow *tries* to start `backend` + `web` using `docker-compose.ci.yml` and waits for `GET /health` and `GET /options`.
+- If Docker isn’t available or warm-up fails, the workflow continues and still builds the mobile packages (warm-up is non-blocking).
 
 Local Docker Desktop:
 - When you test mobile apps locally, run `docker compose up -d backend web` first so the phone/tablet can reach the latest API.
