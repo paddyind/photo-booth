@@ -1,5 +1,8 @@
 name: Mobile Build (APK + IPA)
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
     branches: [ main ]
@@ -116,6 +119,25 @@ jobs:
           # Create native Android project files if missing.
           npx cap add android
           npx cap sync android
+          # Ensure generated AndroidManifest has camera permission for getUserMedia.
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          test -f "$MANIFEST" || { echo "ERROR: $MANIFEST not found after cap sync"; exit 1; }
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text(encoding="utf-8")
+          perm = '<uses-permission android:name="android.permission.CAMERA" />'
+          if perm not in text:
+              insert_at = text.find(">")
+              if insert_at != -1:
+                  text = text[:insert_at + 1] + "\n    " + perm + text[insert_at + 1:]
+          feature = '<uses-feature android:name="android.hardware.camera.any" android:required="false" />'
+          if feature not in text:
+              app_idx = text.find("<application")
+              if app_idx != -1:
+                  text = text[:app_idx] + "    " + feature + "\n" + text[app_idx:]
+          manifest.write_text(text, encoding="utf-8")
+          PY
           # Force stable Android API levels in generated files.
           if [ -f "android/variables.gradle" ]; then
             sed -E -i.bak 's/minSdkVersion *= *[0-9]+/minSdkVersion = 24/' android/variables.gradle || true
