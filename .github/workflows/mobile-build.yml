@@ -117,8 +117,8 @@ jobs:
           npx cap add android
           npx cap sync android
           echo "Android generated files:"
-          ls -la apps/mobile/android
-          test -f apps/mobile/android/settings.gradle || { echo "ERROR: apps/mobile/android/settings.gradle missing after cap sync"; exit 1; }
+          ls -la android
+          test -f android/settings.gradle || { echo "ERROR: apps/mobile/android/settings.gradle missing after cap sync"; exit 1; }
 
       - name: Build Android APK
         run: |
@@ -185,9 +185,20 @@ jobs:
         run: |
           cd apps/mobile/ios
           # Common Capacitor default: App target name is "App"
+          XCODE_PROJECT="App/App.xcodeproj"
+          if [ ! -f "$XCODE_PROJECT" ]; then
+            XCODE_PROJECT="$(ls -1 *.xcodeproj 2>/dev/null | head -n 1)"
+          fi
+          SCHEME="App"
+          if [ -f "$XCODE_PROJECT" ]; then
+            SCHEME_FROM_LIST="$(xcodebuild -list -project "$XCODE_PROJECT" 2>/dev/null | /usr/bin/awk '/Schemes:/{getline; print $1; exit}')"
+            if [ -n "$SCHEME_FROM_LIST" ]; then
+              SCHEME="$SCHEME_FROM_LIST"
+            fi
+          fi
           xcodebuild \
-            -project App.xcodeproj \
-            -scheme App \
+            -project "$XCODE_PROJECT" \
+            -scheme "$SCHEME" \
             -sdk iphonesimulator \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
@@ -197,7 +208,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-simulator-app-${{ github.run_number }}
-          path: apps/mobile/ios/App/build/Build/Products/Debug-iphonesimulator/*.app
+          path: apps/mobile/ios/**/build/Build/Products/Debug-iphonesimulator/*.app
 
   ios-ipa:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_ipa }}
@@ -275,8 +286,20 @@ jobs:
 
           # Expected defaults (adjust these if your iOS project uses different names).
           IOS_DIR="apps/mobile/ios"
-          XCODE_PROJECT="$IOS_DIR/App.xcodeproj"
+          XCODE_PROJECT="$IOS_DIR/App/App.xcodeproj"
           SCHEME="App"
+
+          if [ ! -f "$XCODE_PROJECT" ]; then
+            # Fallback: try any nested .xcodeproj
+            XCODE_PROJECT="$(ls -1 "$IOS_DIR"/*.xcodeproj "$IOS_DIR"/*/*.xcodeproj 2>/dev/null | head -n 1)"
+          fi
+
+          if [ -f "$XCODE_PROJECT" ]; then
+            SCHEME_FROM_LIST="$(xcodebuild -list -project "$XCODE_PROJECT" 2>/dev/null | /usr/bin/awk '/Schemes:/{getline; print $1; exit}')"
+            if [ -n "$SCHEME_FROM_LIST" ]; then
+              SCHEME="$SCHEME_FROM_LIST"
+            fi
+          fi
 
           test -f "$XCODE_PROJECT" || { echo "Expected iOS project not found: $XCODE_PROJECT"; exit 1; }
           test -d "$IOS_DIR" || { echo "Expected iOS directory not found: $IOS_DIR"; exit 1; }
