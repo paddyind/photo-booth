@@ -95,6 +95,8 @@
           <select id="sizeSelect"></select>
           <span class="pill">Orientation</span>
           <select id="orientationSelect"></select>
+          <button id="startCameraBtn" class="secondary">Start Camera</button>
+          <button id="stopCameraBtn" class="secondary">Stop Camera</button>
           <button id="captureBtn" class="primary">Capture + Preview</button>
         </div>
         <div id="frameGrid" class="frame-grid" style="display:none;"></div>
@@ -135,6 +137,8 @@
       const sizeSelect = document.getElementById("sizeSelect");
       const orientationSelect = document.getElementById("orientationSelect");
       const frameGrid = document.getElementById("frameGrid");
+      const startCameraBtn = document.getElementById("startCameraBtn");
+      const stopCameraBtn = document.getElementById("stopCameraBtn");
       const captureBtn = document.getElementById("captureBtn");
       const finalFormat = document.getElementById("finalFormat");
       const prepareFinalBtn = document.getElementById("prepareFinalBtn");
@@ -149,10 +153,17 @@
       let currentFinalUrl = "";
       let selectedFrameId = "";
       let framePreviewUrls = {}; // frameId -> full preview URL
+      let activeStream = null;
 
       function setStatus(message, isError = false) {
         statusEl.textContent = message;
         statusEl.className = isError ? "status error" : "status";
+      }
+
+      function setCameraButtonsState(isOn) {
+        startCameraBtn.disabled = isOn;
+        stopCameraBtn.disabled = !isOn;
+        captureBtn.disabled = !isOn;
       }
 
       function fillSelect(selectEl, options, defaultValue = "") {
@@ -176,12 +187,32 @@
       }
 
       async function startCamera() {
+        if (activeStream) {
+          setStatus("Camera already on");
+          return;
+        }
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "user" },
           audio: false,
         });
+        activeStream = stream;
         video.srcObject = stream;
-        setStatus("Camera ready");
+        setCameraButtonsState(true);
+        setStatus("Camera ready (ON)");
+      }
+
+      function stopCamera() {
+        if (!activeStream) {
+          setStatus("Camera already off");
+          return;
+        }
+        for (const track of activeStream.getTracks()) {
+          track.stop();
+        }
+        activeStream = null;
+        video.srcObject = null;
+        setCameraButtonsState(false);
+        setStatus("Camera stopped (OFF)");
       }
 
       async function loadOptions() {
@@ -388,6 +419,18 @@
         }
       });
 
+      startCameraBtn.addEventListener("click", async () => {
+        try {
+          await startCamera();
+        } catch (e) {
+          setStatus(`Camera init failed: ${e.message}`, true);
+        }
+      });
+
+      stopCameraBtn.addEventListener("click", () => {
+        stopCamera();
+      });
+
       prepareFinalBtn.addEventListener("click", async () => {
         try {
           await prepareFinal();
@@ -424,12 +467,9 @@
       });
 
       (async function init() {
-        try {
-          await startCamera();
-        } catch (e) {
-          setStatus(`Camera init failed: ${e.message}`, true);
-          return;
-        }
+        // Security-friendly default: keep camera OFF until user explicitly starts it.
+        setCameraButtonsState(false);
+        setStatus("Camera is OFF. Click Start Camera.");
         try {
           await loadOptions();
           updatePreviewRatio();
@@ -438,6 +478,10 @@
           setStatus(`Frames unavailable: ${e.message}`, true);
         }
       })();
+
+      window.addEventListener("beforeunload", () => {
+        if (activeStream) stopCamera();
+      });
     </script>
   </body>
   </html>
