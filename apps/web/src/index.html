@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Photo Booth v2</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111'/%3E%3Ccircle cx='8' cy='8' r='4' fill='%2300f3ff'/%3E%3C/svg%3E" />
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #111; color: #fff; }
+      .wrap { max-width: 720px; margin: 0 auto; }
+      video { width: 100%; border-radius: 12px; background: #000; }
+      button, select { padding: 10px 14px; border-radius: 8px; border: 0; margin-top: 10px; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+      .card { background: #1d1d1d; border-radius: 12px; padding: 12px; margin-top: 12px; }
+      .muted { color: #bbb; font-size: 14px; }
+      .status { margin-top: 8px; font-size: 14px; color: #9ad; }
+      .status.error { color: #ff8f8f; }
+      a { color: #7ad0ff; }
+      .pill { background: #2a2a2a; border-radius: 999px; padding: 6px 10px; font-size: 13px; color: #ddd; }
+      .primary { background: #00c2ff; color: #031018; font-weight: 700; }
+      .secondary { background: #2f2f2f; color: #fff; }
+      .actions button { min-width: 150px; }
+      .preview-pane { min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
+      .preview-shell {
+        width: 100%;
+        aspect-ratio: var(--preview-ratio, 2 / 3);
+        background: #0f0f0f;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #333;
+      }
+      .preview-shell img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+        background: #161616;
+      }
+      .frame-grid {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .frame-card {
+        border: 1px solid #333;
+        border-radius: 12px;
+        background: #171717;
+        padding: 8px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .frame-card.selected {
+        border-color: #00c2ff;
+        box-shadow: 0 0 0 2px rgba(0, 194, 255, 0.18);
+      }
+      .frame-thumb {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        background: #0f0f0f;
+        border-radius: 10px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .frame-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+        background: #0f0f0f;
+      }
+      .frame-name {
+        margin-top: 8px;
+        font-size: 12px;
+        color: #ddd;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Photo Booth v2</h1>
+      <p class="muted">Capture -> Preview -> Finalize as PNG/PDF -> Print (browser print dialog)</p>
+
+      <div class="card">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas" style="display:none;"></canvas>
+        <div class="row">
+          <span class="pill">Size</span>
+          <select id="sizeSelect"></select>
+          <span class="pill">Orientation</span>
+          <select id="orientationSelect"></select>
+          <button id="captureBtn" class="primary">Capture + Preview</button>
+        </div>
+        <div id="frameGrid" class="frame-grid" style="display:none;"></div>
+        <div class="row actions">
+          <button id="prepareFinalBtn" class="secondary" style="display:none;">Prepare Final</button>
+          <select id="finalFormat" style="display:none;">
+            <option value="png">PNG</option>
+            <option value="jpeg">JPEG</option>
+            <option value="pdf">PDF</option>
+          </select>
+          <button id="printBtn" class="secondary" style="display:none;">Print Final</button>
+        </div>
+        <div id="status" class="status">Initializing camera...</div>
+      </div>
+
+      <div class="card" id="previewCard" style="display:none;">
+        <h3>Composed Preview</h3>
+        <div id="previewShell" class="preview-shell">
+          <img id="preview" alt="Preview will appear here" />
+        </div>
+        <div class="preview-pane">
+          <p id="finalLinkWrap" class="muted"></p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE = `${location.protocol}//${location.hostname}:8000`;
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const preview = document.getElementById("preview");
+      const sizeSelect = document.getElementById("sizeSelect");
+      const orientationSelect = document.getElementById("orientationSelect");
+      const frameGrid = document.getElementById("frameGrid");
+      const captureBtn = document.getElementById("captureBtn");
+      const finalFormat = document.getElementById("finalFormat");
+      const prepareFinalBtn = document.getElementById("prepareFinalBtn");
+      const printBtn = document.getElementById("printBtn");
+      const previewCard = document.getElementById("previewCard");
+      const previewShell = document.getElementById("previewShell");
+      const statusEl = document.getElementById("status");
+      const finalLinkWrap = document.getElementById("finalLinkWrap");
+
+      let currentImageId = null;
+      let finalizedImageId = null;
+      let currentFinalUrl = "";
+      let selectedFrameId = "";
+      let framePreviewUrls = {}; // frameId -> full preview URL
+
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.className = isError ? "status error" : "status";
+      }
+
+      function fillSelect(selectEl, options, defaultValue = "") {
+        selectEl.innerHTML = "";
+        for (const val of options) {
+          const opt = document.createElement("option");
+          opt.value = val;
+          opt.textContent = val;
+          if (val === defaultValue) opt.selected = true;
+          selectEl.appendChild(opt);
+        }
+      }
+
+      function updatePreviewRatio() {
+        const size = sizeSelect.value || "4x6";
+        const orientation = orientationSelect.value || "portrait";
+        const [a, b] = size.split("x").map((x) => parseInt(x, 10));
+        if (!a || !b) return;
+        const ratio = orientation === "landscape" ? `${b} / ${a}` : `${a} / ${b}`;
+        previewShell.style.setProperty("--preview-ratio", ratio);
+      }
+
+      async function startCamera() {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false,
+        });
+        video.srcObject = stream;
+        setStatus("Camera ready");
+      }
+
+      async function loadOptions() {
+        const res = await fetch(`${API_BASE}/options`, { mode: "cors" });
+        if (!res.ok) throw new Error(`Options API failed (${res.status})`);
+        const data = await res.json();
+        fillSelect(sizeSelect, data.sizes || ["4x6"], "4x6");
+        fillSelect(orientationSelect, data.orientations || ["portrait", "landscape"], "portrait");
+      }
+
+      function setSelectedFrameVisual(frameId) {
+        selectedFrameId = frameId;
+        for (const el of frameGrid.querySelectorAll(".frame-card")) {
+          el.classList.toggle("selected", el.dataset.frameId === frameId);
+        }
+        finalLinkWrap.innerHTML = "";
+        currentFinalUrl = "";
+      }
+
+      async function composePreviewForFrame(frameId) {
+        if (!currentImageId) return;
+        if (!frameId) return;
+        // If a final was already prepared, the preview selection can still change
+        // (multi-print workflow). Any previously prepared final becomes stale.
+        finalizedImageId = null;
+        currentFinalUrl = "";
+        finalLinkWrap.innerHTML = "";
+        printBtn.style.display = "none";
+
+        setStatus(`Composing preview (${frameId})...`);
+        const payload = {
+          image_id: currentImageId,
+          frame_id: frameId,
+          size: sizeSelect.value || "4x6",
+          orientation: orientationSelect.value || "portrait",
+        };
+        const res = await fetch(`${API_BASE}/compose/preview-from-id`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          mode: "cors",
+        });
+        if (!res.ok) throw new Error(`Preview compose failed (${res.status})`);
+        const data = await res.json();
+        if (data.preview_url) {
+          preview.src = `${API_BASE}${data.preview_url}?t=${Date.now()}`;
+          setStatus(`Preview ready (${frameId})`);
+        }
+      }
+
+      async function loadFrames(generatePreviews) {
+        const size = sizeSelect.value || "4x6";
+        const orientation = orientationSelect.value || "portrait";
+        const res = await fetch(`${API_BASE}/frames?size=${encodeURIComponent(size)}`, { mode: "cors" });
+        if (!res.ok) throw new Error(`Frame API failed (${res.status})`);
+        const data = await res.json();
+        const frames = data.frames || [];
+
+        frameGrid.innerHTML = "";
+        const previousSelection = selectedFrameId || "";
+        finalLinkWrap.innerHTML = "";
+        currentFinalUrl = "";
+
+        // Choose a default frame preference.
+        const defaultFrame =
+          frames.some((f) => f.id === "story-memories") ? "story-memories" : (frames[0]?.id || "");
+
+        for (const f of frames) {
+          const card = document.createElement("div");
+          card.className = "frame-card";
+          card.dataset.frameId = f.id;
+
+          const thumb = document.createElement("div");
+          thumb.className = "frame-thumb";
+          const img = document.createElement("img");
+          img.alt = `Preview ${f.id}`;
+          img.src = `${API_BASE}/frames/template/${encodeURIComponent(size)}/${encodeURIComponent(f.id)}`;
+          thumb.appendChild(img);
+
+          const name = document.createElement("div");
+          name.className = "frame-name";
+          name.textContent = f.id;
+
+          card.appendChild(thumb);
+          card.appendChild(name);
+
+          card.addEventListener("click", async () => {
+            setSelectedFrameVisual(f.id);
+            try {
+              await composePreviewForFrame(f.id);
+            } catch (e) {
+              setStatus(`Preview error: ${e.message}`, true);
+            }
+          });
+
+          frameGrid.appendChild(card);
+        }
+
+        // Restore previous frame selection if possible.
+        const fallbackSelection = (previousSelection && frames.some((f) => f.id === previousSelection))
+          ? previousSelection
+          : (defaultFrame || frames[0]?.id || "");
+
+        if (fallbackSelection) {
+          setSelectedFrameVisual(fallbackSelection);
+          if (currentImageId) {
+            await composePreviewForFrame(fallbackSelection);
+          } else {
+            setStatus(`Choose a frame (capture to preview). Frames: ${frames.length}`);
+          }
+        } else {
+          setStatus(`No frames found for ${size}.`);
+        }
+      }
+
+      async function captureAndCompose() {
+        if (!video.videoWidth || !video.videoHeight) {
+          setStatus("Camera not ready yet. Please allow camera access.", true);
+          return;
+        }
+
+        const size = sizeSelect.value || "4x6";
+        const orientation = orientationSelect.value || "portrait";
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0);
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
+
+        const form = new FormData();
+        form.append("image", blob, "capture.jpg");
+        // Create an empty/no-frame preview to store the image_id.
+        form.append("frame_id", "");
+        form.append("size", size);
+        form.append("orientation", orientation);
+
+        const res = await fetch(`${API_BASE}/compose/preview`, { method: "POST", body: form, mode: "cors" });
+        if (!res.ok) throw new Error(`Capture failed (${res.status})`);
+        const data = await res.json();
+
+        currentImageId = data.image_id;
+        finalizedImageId = null;
+        currentFinalUrl = "";
+        finalLinkWrap.innerHTML = "";
+        preview.src = "";
+        selectedFrameId = "";
+        framePreviewUrls = {};
+
+        setStatus("Image captured. Preparing frame options...");
+        await loadFrames(false);
+
+        // Reveal frame selection + preview + final options after capture.
+        frameGrid.style.display = "grid";
+        previewCard.style.display = "block";
+        prepareFinalBtn.style.display = "";
+        finalFormat.style.display = "";
+        printBtn.style.display = "";
+      }
+
+      async function prepareFinal() {
+        if (!currentImageId) {
+          setStatus("Capture an image first.", true);
+          return;
+        }
+        if (!selectedFrameId) {
+          setStatus("Select a frame option first.", true);
+          return;
+        }
+
+        const payload = {
+          image_id: currentImageId,
+          frame_id: selectedFrameId,
+          size: sizeSelect.value || "4x6",
+          orientation: orientationSelect.value || "portrait",
+          output_format: finalFormat.value,
+        };
+        const res = await fetch(`${API_BASE}/compose/final`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          mode: "cors",
+        });
+        if (!res.ok) throw new Error(`Final output failed (${res.status})`);
+        const data = await res.json();
+
+        const href = `${API_BASE}${data.final_url}?t=${Date.now()}`;
+        currentFinalUrl = href;
+        finalizedImageId = currentImageId;
+        finalLinkWrap.innerHTML = `Final ready: <a href="${href}" target="_blank" rel="noopener">Open ${data.output_format.toUpperCase()}</a>`;
+        setStatus(`Final ${data.output_format.toUpperCase()} prepared. Previews cleared.`);
+
+        // Ensure print is available for this freshly prepared final.
+        printBtn.style.display = "";
+      }
+
+      captureBtn.addEventListener("click", async () => {
+        try {
+          await captureAndCompose();
+        } catch (e) {
+          setStatus(`Capture error: ${e.message}`, true);
+        }
+      });
+
+      prepareFinalBtn.addEventListener("click", async () => {
+        try {
+          await prepareFinal();
+        } catch (e) {
+          setStatus(`Finalization error: ${e.message}`, true);
+        }
+      });
+
+      printBtn.addEventListener("click", () => {
+        if (!currentFinalUrl) {
+          setStatus("Prepare a final file first.", true);
+          return;
+        }
+        window.open(currentFinalUrl, "_blank", "noopener");
+        setStatus("Opened final file. Use browser/system print dialog.");
+      });
+
+      sizeSelect.addEventListener("change", async () => {
+        updatePreviewRatio();
+        try {
+          await loadFrames(false);
+        } catch (e) {
+          setStatus(`Frames unavailable: ${e.message}`, true);
+        }
+      });
+
+      orientationSelect.addEventListener("change", async () => {
+        updatePreviewRatio();
+        try {
+          await loadFrames(false);
+        } catch (e) {
+          setStatus(`Preview error: ${e.message}`, true);
+        }
+      });
+
+      (async function init() {
+        try {
+          await startCamera();
+        } catch (e) {
+          setStatus(`Camera init failed: ${e.message}`, true);
+          return;
+        }
+        try {
+          await loadOptions();
+          updatePreviewRatio();
+          await loadFrames(false);
+        } catch (e) {
+          setStatus(`Frames unavailable: ${e.message}`, true);
+        }
+      })();
+    </script>
+  </body>
+  </html>

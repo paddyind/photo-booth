@@ -1,0 +1,15 @@
+{
+  "name": "default",
+  "size": "4x6",
+  "canvas": {
+    "width": 1800,
+    "height": 2700,
+    "dpi": 300
+  },
+  "safe_area": {
+    "top_margin": 260,
+    "bottom_margin": 320,
+    "padding": 80
+  },
+  "notes": "Add frame.png in this same folder."
+}
