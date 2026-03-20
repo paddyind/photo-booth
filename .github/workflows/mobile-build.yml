@@ -96,7 +96,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: "tools platform-tools platforms;android-36 build-tools;35.0.0"
+          packages: "tools platform-tools platforms;android-34 build-tools;34.0.0"
 
       - name: Ensure @capacitor/android is installed
         run: |
@@ -116,17 +116,17 @@ jobs:
           # Create native Android project files if missing.
           npx cap add android
           npx cap sync android
-          # Force modern Android API levels in generated files.
+          # Force stable Android API levels in generated files.
           if [ -f "android/variables.gradle" ]; then
-            sed -E -i.bak 's/minSdkVersion *= *[0-9]+/minSdkVersion = 34/' android/variables.gradle || true
-            sed -E -i.bak 's/compileSdkVersion *= *[0-9]+/compileSdkVersion = 35/' android/variables.gradle || true
-            sed -E -i.bak 's/targetSdkVersion *= *[0-9]+/targetSdkVersion = 35/' android/variables.gradle || true
+            sed -E -i.bak 's/minSdkVersion *= *[0-9]+/minSdkVersion = 24/' android/variables.gradle || true
+            sed -E -i.bak 's/compileSdkVersion *= *[0-9]+/compileSdkVersion = 34/' android/variables.gradle || true
+            sed -E -i.bak 's/targetSdkVersion *= *[0-9]+/targetSdkVersion = 34/' android/variables.gradle || true
             rm -f android/variables.gradle.bak
           fi
           if [ -f "android/app/build.gradle" ]; then
-            sed -E -i.bak 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 35/' android/app/build.gradle || true
-            sed -E -i.bak 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 34/' android/app/build.gradle || true
-            sed -E -i.bak 's/targetSdkVersion[[:space:]]+[0-9]+/targetSdkVersion 35/' android/app/build.gradle || true
+            sed -E -i.bak 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 34/' android/app/build.gradle || true
+            sed -E -i.bak 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/' android/app/build.gradle || true
+            sed -E -i.bak 's/targetSdkVersion[[:space:]]+[0-9]+/targetSdkVersion 34/' android/app/build.gradle || true
             rm -f android/app/build.gradle.bak
           fi
           echo "Android generated files:"
@@ -213,19 +213,23 @@ jobs:
           cd apps/mobile/ios
           test -f "App/App.xcworkspace/contents.xcworkspacedata" || { echo "Missing App/App.xcworkspace"; ls -la App || true; exit 1; }
           rm -rf ~/Library/Developer/Xcode/DerivedData/*
+          mkdir -p build
           xcodebuild \
             -workspace "App/App.xcworkspace" \
             -scheme "App" \
             -sdk iphonesimulator \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "build" \
             clean build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+          ls -la build/Build/Products/Debug-iphonesimulator || true
 
       - name: Upload iOS Simulator .app
         uses: actions/upload-artifact@v4
         with:
           name: ios-simulator-app-${{ github.run_number }}
-          path: apps/mobile/ios/**/build/Build/Products/Debug-iphonesimulator/*.app
+          path: apps/mobile/ios/build/Build/Products/Debug-iphonesimulator/*.app
+          if-no-files-found: error
 
   ios-ipa:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_ipa }}
