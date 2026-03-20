@@ -54,7 +54,9 @@ jobs:
         run: |
           cd apps/mobile
           PHOTOBOOTH_API_BASE="${{ inputs.api_base_url }}" PHOTOBOOTH_ENABLE_8X11="${{ inputs.enable_8x11 }}" npm run prepare-www
-          npm run cap:sync
+          # Ensure native platform exists in CI workspace.
+          npx cap add android
+          npx cap sync android
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -89,6 +91,15 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Ensure CocoaPods
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            echo "CocoaPods not found; installing..."
+            sudo gem install cocoapods --no-document
+          else
+            echo "CocoaPods already installed"
+          fi
+
       - name: Verify mobile app scaffold exists
         run: |
           test -f "apps/mobile/package.json" || { echo "apps/mobile/package.json not found. Create a Capacitor mobile app in apps/mobile first."; exit 1; }
@@ -102,7 +113,8 @@ jobs:
         run: |
           cd apps/mobile
           PHOTOBOOTH_API_BASE="${{ inputs.api_base_url }}" PHOTOBOOTH_ENABLE_8X11="${{ inputs.enable_8x11 }}" npm run prepare-www
-          npm run cap:sync
+          npx cap add ios
+          npx cap sync ios
 
       - name: Build iOS Simulator app
         run: |
@@ -133,6 +145,15 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Ensure CocoaPods
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            echo "CocoaPods not found; installing..."
+            sudo gem install cocoapods --no-document
+          else
+            echo "CocoaPods already installed"
+          fi
+
       - name: Verify mobile app scaffold exists
         run: |
           test -f "apps/mobile/package.json" || { echo "apps/mobile/package.json not found. Create a Capacitor mobile app in apps/mobile first."; exit 1; }
@@ -153,7 +174,8 @@ jobs:
         run: |
           cd apps/mobile
           PHOTOBOOTH_API_BASE="${{ inputs.api_base_url }}" PHOTOBOOTH_ENABLE_8X11="${{ inputs.enable_8x11 }}" npm run prepare-www
-          npm run cap:sync
+          npx cap add ios
+          npx cap sync ios
 
       - name: Decode signing artifacts
         env:

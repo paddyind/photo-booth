@@ -2,7 +2,9 @@ name: Validate and build mobile
 
 on:
   push:
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -43,6 +45,8 @@ jobs:
         run: |
           cd apps/mobile
           npm run prepare-www
+          # Always ensure the native platform exists in CI workspace.
+          npx cap add android
           npx cap sync android
 
   ios-validate:
@@ -54,6 +58,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      - name: Ensure CocoaPods
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            echo "CocoaPods not found; installing..."
+            sudo gem install cocoapods --no-document
+          else
+            echo "CocoaPods already installed"
+          fi
 
       - name: Verify mobile app scaffold exists
         run: |
@@ -71,5 +84,7 @@ jobs:
         run: |
           cd apps/mobile
           npm run prepare-www
+          # Always ensure the native platform exists in CI workspace.
+          npx cap add ios
           npx cap sync ios
 
