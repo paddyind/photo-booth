@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Photo Booth v2</title>
+    <title>Photo Booth</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111'/%3E%3Ccircle cx='8' cy='8' r='4' fill='%2300f3ff'/%3E%3C/svg%3E" />
     <style>
       body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #111; color: #fff; }
@@ -84,7 +84,7 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>Photo Booth v2</h1>
+      <h1>Photo Booth</h1>
       <p class="muted">Capture -> Preview -> Finalize as PNG/PDF -> Print (browser print dialog)</p>
 
       <div class="card">
@@ -110,6 +110,10 @@
           <button id="printBtn" class="secondary" style="display:none;">Print Final</button>
         </div>
         <div id="status" class="status">Initializing camera...</div>
+        <details class="muted" style="margin-top:8px;">
+          <summary>Debug logs</summary>
+          <pre id="debugLog" style="white-space:pre-wrap;max-height:160px;overflow:auto;"></pre>
+        </details>
       </div>
 
       <div class="card" id="previewCard" style="display:none;">
@@ -147,6 +151,7 @@
       const previewShell = document.getElementById("previewShell");
       const statusEl = document.getElementById("status");
       const finalLinkWrap = document.getElementById("finalLinkWrap");
+      const debugLogEl = document.getElementById("debugLog");
 
       let currentImageId = null;
       let finalizedImageId = null;
@@ -158,6 +163,63 @@
       function setStatus(message, isError = false) {
         statusEl.textContent = message;
         statusEl.className = isError ? "status error" : "status";
+      }
+
+      function logDebug(message, meta = null) {
+        const ts = new Date().toISOString();
+        const detail = meta ? ` ${JSON.stringify(meta)}` : "";
+        const line = `[${ts}] ${message}${detail}`;
+        console.log(line);
+        if (!debugLogEl) return;
+        debugLogEl.textContent += `${line}\n`;
+        // Keep the panel compact on mobile.
+        const maxChars = 6000;
+        if (debugLogEl.textContent.length > maxChars) {
+          debugLogEl.textContent = debugLogEl.textContent.slice(-maxChars);
+        }
+      }
+
+      async function readErrorBody(res) {
+        try {
+          const text = await res.text();
+          return text.slice(0, 240);
+        } catch (_e) {
+          return "";
+        }
+      }
+
+      async function apiFetch(url, options = {}, label = "request") {
+        const method = options.method || "GET";
+        const started = Date.now();
+        logDebug(`HTTP ${label} -> ${method} ${url}`);
+        try {
+          const res = await fetch(url, { ...options, mode: "cors" });
+          logDebug(`HTTP ${label} <- ${res.status} ${res.statusText} (${Date.now() - started}ms)`);
+          return res;
+        } catch (e) {
+          logDebug(`HTTP ${label} failed`, {
+            message: e.message,
+            online: navigator.onLine,
+            apiBase: API_BASE,
+            page: location.href,
+          });
+          throw new Error(`${e.message} (api=${API_BASE}, online=${navigator.onLine})`);
+        }
+      }
+
+      async function checkApiHealth() {
+        try {
+          const res = await apiFetch(`${API_BASE}/health`, {}, "health");
+          if (!res.ok) {
+            const body = await readErrorBody(res);
+            logDebug("Health check returned non-OK", { status: res.status, body });
+            return;
+          }
+          const data = await res.json();
+          logDebug("Health check OK", data);
+        } catch (e) {
+          logDebug("Health check error", { message: e.message });
+        }
       }
 
       function setCameraButtonsState(isOn) {
@@ -218,8 +280,8 @@
       async function loadOptions() {
         let optionsUrl = `${API_BASE}/options`;
         if (ENABLE_8X11) optionsUrl += `?include_8x11=1`;
-        const res = await fetch(optionsUrl, { mode: "cors" });
-        if (!res.ok) throw new Error(`Options API failed (${res.status})`);
+        const res = await apiFetch(optionsUrl, {}, "options");
+        if (!res.ok) throw new Error(`Options API failed (${res.status}) ${await readErrorBody(res)}`);
         const data = await res.json();
         fillSelect(sizeSelect, data.sizes || ["4x6"], "4x6");
         fillSelect(orientationSelect, data.orientations || ["portrait", "landscape"], "portrait");
@@ -251,13 +313,12 @@
           size: sizeSelect.value || "4x6",
           orientation: orientationSelect.value || "portrait",
         };
-        const res = await fetch(`${API_BASE}/compose/preview-from-id`, {
+        const res = await apiFetch(`${API_BASE}/compose/preview-from-id`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
-          mode: "cors",
-        });
-        if (!res.ok) throw new Error(`Preview compose failed (${res.status})`);
+        }, "preview-from-id");
+        if (!res.ok) throw new Error(`Preview compose failed (${res.status}) ${await readErrorBody(res)}`);
         const data = await res.json();
         if (data.preview_url) {
           preview.src = `${API_BASE}${data.preview_url}?t=${Date.now()}`;
@@ -268,8 +329,8 @@
       async function loadFrames(generatePreviews) {
         const size = sizeSelect.value || "4x6";
         const orientation = orientationSelect.value || "portrait";
-        const res = await fetch(`${API_BASE}/frames?size=${encodeURIComponent(size)}`, { mode: "cors" });
-        if (!res.ok) throw new Error(`Frame API failed (${res.status})`);
+        const res = await apiFetch(`${API_BASE}/frames?size=${encodeURIComponent(size)}`, {}, "frames");
+        if (!res.ok) throw new Error(`Frame API failed (${res.status}) ${await readErrorBody(res)}`);
         const data = await res.json();
         const frames = data.frames || [];
 
@@ -352,8 +413,8 @@
         form.append("size", size);
         form.append("orientation", orientation);
 
-        const res = await fetch(`${API_BASE}/compose/preview`, { method: "POST", body: form, mode: "cors" });
-        if (!res.ok) throw new Error(`Capture failed (${res.status})`);
+        const res = await apiFetch(`${API_BASE}/compose/preview`, { method: "POST", body: form }, "compose-preview");
+        if (!res.ok) throw new Error(`Capture failed (${res.status}) ${await readErrorBody(res)}`);
         const data = await res.json();
 
         currentImageId = data.image_id;
@@ -392,13 +453,12 @@
           orientation: orientationSelect.value || "portrait",
           output_format: finalFormat.value,
         };
-        const res = await fetch(`${API_BASE}/compose/final`, {
+        const res = await apiFetch(`${API_BASE}/compose/final`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
-          mode: "cors",
-        });
-        if (!res.ok) throw new Error(`Final output failed (${res.status})`);
+        }, "compose-final");
+        if (!res.ok) throw new Error(`Final output failed (${res.status}) ${await readErrorBody(res)}`);
         const data = await res.json();
 
         const href = `${API_BASE}${data.final_url}?t=${Date.now()}`;
@@ -470,6 +530,8 @@
         // Security-friendly default: keep camera OFF until user explicitly starts it.
         setCameraButtonsState(false);
         setStatus("Camera is OFF. Click Start Camera.");
+        logDebug("App init", { apiBase: API_BASE, enable8x11: ENABLE_8X11, online: navigator.onLine });
+        await checkApiHealth();
         try {
           await loadOptions();
           updatePreviewRatio();

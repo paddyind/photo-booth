@@ -1,4 +1,4 @@
-# Photo Booth v2
+# Photo Booth
 
 Consumer-friendly photo booth platform for phone/tablet capture, frame overlays, preview saves, and managed printing.
 
