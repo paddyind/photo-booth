@@ -38,7 +38,8 @@ Consumer-friendly photo booth platform for phone/tablet capture, frame overlays,
 Frames are loaded from the repository folders (no external upload required).
 
 - Base path: `shared/frames/<size>/<frame-id>/frame.png`
-- Supported sizes right now: `4x6`, `5x7`, `6x8`
+- Supported sizes right now (initial options): `4x6`, `5x7`
+- Additional size supported by the backend/compositor (frames can be added): `8x11` (mobile UI opt-in via `PHOTOBOOTH_ENABLE_8X11`)
 - Example:
   - `shared/frames/4x6/story-memories/frame.png`
   - `shared/frames/5x7/story-memories/frame.png`
@@ -51,7 +52,7 @@ Frames are loaded from the repository folders (no external upload required).
    - `shared/frames/4x6/my-new-frame/frame.png`
 3. If you want the same visual for other sizes, copy to:
    - `shared/frames/5x7/my-new-frame/frame.png`
-   - `shared/frames/6x8/my-new-frame/frame.png`
+   - `shared/frames/8x11/my-new-frame/frame.png`
 4. Restart services:
    - `docker compose restart api web`
 
@@ -81,6 +82,7 @@ Inputs:
 - `build_apk` (default `true`)
 - `build_ios_simulator_app` (default `true`)
 - `build_ipa` (default `false`)
+- `enable_8x11` (default `false`) to opt-in to showing `8x11` in the mobile UI
 
 ### Notes about iOS IPA
 

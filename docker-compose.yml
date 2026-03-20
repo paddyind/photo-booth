@@ -1,8 +1,8 @@
 services:
-  api:
-    image: campus-circle-backend:latest
+  backend:
+    image: photo-booth-backend:latest
     pull_policy: never
-    container_name: photo-booth-api
+    container_name: backend
     command: uvicorn apps.api.app.main:app --host 0.0.0.0 --port 8000
     ports:
       - "${API_PORT:-8000}:8000"
@@ -12,9 +12,9 @@ services:
       - ./shared/frames:/app/shared/frames
 
   web:
-    image: nginx:stable-alpine
+    image: photo-booth-web:latest
     pull_policy: never
-    container_name: photo-booth-web
+    container_name: web
     ports:
       - "${WEB_PORT:-3000}:80"
     volumes:
@@ -22,4 +22,4 @@ services:
     environment:
       - VITE_API_BASE=http://localhost:${API_PORT:-8000}
     depends_on:
-      - api
+      - backend

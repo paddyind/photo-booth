@@ -1,0 +1,7 @@
+{
+  "appId": "com.example.photobooth",
+  "appName": "PhotoBooth",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
+

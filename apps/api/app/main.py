@@ -129,9 +129,13 @@ async def upload_frame(
 
 
 @app.get("/options")
-def get_options() -> dict:
+def get_options(include_8x11: bool = False) -> dict:
+    sizes = ["4x6", "5x7"]
+    # 8x11 is intentionally hidden by default (enable via `?include_8x11=1`).
+    if include_8x11:
+        sizes.append("8x11")
     return {
-        "sizes": list(PRINT_PRESETS.keys()),
+        "sizes": sizes,
         "orientations": ["portrait", "landscape"],
         "output_formats": ["png", "jpeg", "pdf"],
     }

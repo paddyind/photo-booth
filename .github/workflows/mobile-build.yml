@@ -23,6 +23,11 @@ on:
         required: false
         default: "http://YOUR_LAN_IP:8000"
         type: string
+      enable_8x11:
+        description: "Opt-in to showing 8x11 (A4-style) in the mobile UI."
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   android-apk:
@@ -46,11 +51,9 @@ jobs:
           npm ci || npm install --legacy-peer-deps
 
       - name: Capacitor sync
-        env:
-          VITE_API_BASE: ${{ inputs.api_base_url }}
-          REACT_APP_API_URL: ${{ inputs.api_base_url }}
         run: |
           cd apps/mobile
+          PHOTOBOOTH_API_BASE="${{ inputs.api_base_url }}" PHOTOBOOTH_ENABLE_8X11="${{ inputs.enable_8x11 }}" npm run prepare-www
           npm run cap:sync
 
       - name: Set up JDK 21
@@ -96,11 +99,9 @@ jobs:
           npm ci || npm install --legacy-peer-deps
 
       - name: Capacitor sync
-        env:
-          VITE_API_BASE: ${{ inputs.api_base_url }}
-          REACT_APP_API_URL: ${{ inputs.api_base_url }}
         run: |
           cd apps/mobile
+          PHOTOBOOTH_API_BASE="${{ inputs.api_base_url }}" PHOTOBOOTH_ENABLE_8X11="${{ inputs.enable_8x11 }}" npm run prepare-www
           npm run cap:sync
 
       - name: Build iOS Simulator app
@@ -149,11 +150,9 @@ jobs:
           npm ci || npm install --legacy-peer-deps
 
       - name: Capacitor sync
-        env:
-          VITE_API_BASE: ${{ inputs.api_base_url }}
-          REACT_APP_API_URL: ${{ inputs.api_base_url }}
         run: |
           cd apps/mobile
+          PHOTOBOOTH_API_BASE="${{ inputs.api_base_url }}" PHOTOBOOTH_ENABLE_8X11="${{ inputs.enable_8x11 }}" npm run prepare-www
           npm run cap:sync
 
       - name: Decode signing artifacts
@@ -229,22 +228,22 @@ jobs:
           IOS_EXPORT_METHOD="${IOS_EXPORT_METHOD:-ad-hoc}"
 
           cat > "$IOS_DIR/build/exportOptions.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>$IOS_EXPORT_METHOD</string>
-  <key>signingStyle</key>
-  <string>manual</string>
-  <key>provisioningProfiles</key>
-  <dict>
-    <key>${IOS_BUNDLE_ID}</key>
-    <string>$PROFILE_NAME</string>
-  </dict>
-</dict>
-</plist>
-EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>$IOS_EXPORT_METHOD</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${IOS_BUNDLE_ID}</key>
+              <string>$PROFILE_NAME</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
           xcodebuild \
             -exportArchive \
             -archivePath "$IOS_DIR/build/$SCHEME.xcarchive" \

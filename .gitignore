@@ -16,3 +16,10 @@ data/archive/*
 !data/previews/.gitkeep
 !data/finals/.gitkeep
 !data/archive/.gitkeep
+
+# Mobile build artifacts
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/node_modules/
+apps/mobile/www/*
+!apps/mobile/www/.gitkeep

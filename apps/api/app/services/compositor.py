@@ -21,7 +21,7 @@ class CanvasConfig:
 PRINT_PRESETS: dict[str, tuple[int, int]] = {
     "4x6": (1800, 2700),
     "5x7": (2100, 3000),
-    "6x8": (2400, 3200),
+    "8x11": (2400, 3300),
 }
 
 
