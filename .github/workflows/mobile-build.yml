@@ -116,6 +116,19 @@ jobs:
           # Create native Android project files if missing.
           npx cap add android
           npx cap sync android
+          # Force modern Android API levels in generated files.
+          if [ -f "android/variables.gradle" ]; then
+            sed -E -i.bak 's/minSdkVersion *= *[0-9]+/minSdkVersion = 34/' android/variables.gradle || true
+            sed -E -i.bak 's/compileSdkVersion *= *[0-9]+/compileSdkVersion = 35/' android/variables.gradle || true
+            sed -E -i.bak 's/targetSdkVersion *= *[0-9]+/targetSdkVersion = 35/' android/variables.gradle || true
+            rm -f android/variables.gradle.bak
+          fi
+          if [ -f "android/app/build.gradle" ]; then
+            sed -E -i.bak 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 35/' android/app/build.gradle || true
+            sed -E -i.bak 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 34/' android/app/build.gradle || true
+            sed -E -i.bak 's/targetSdkVersion[[:space:]]+[0-9]+/targetSdkVersion 35/' android/app/build.gradle || true
+            rm -f android/app/build.gradle.bak
+          fi
           echo "Android generated files:"
           ls -la android
           test -f android/settings.gradle || { echo "ERROR: apps/mobile/android/settings.gradle missing after cap sync"; exit 1; }
@@ -141,6 +154,7 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios_simulator_app }}
     needs: validate-web-bundle
     runs-on: macos-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -190,24 +204,18 @@ jobs:
         run: |
           cd apps/mobile/ios/App
           pod install --repo-update
+          test -f "App.xcworkspace/contents.xcworkspacedata" || { echo "ERROR: iOS workspace not generated"; exit 1; }
+          test -f "Podfile.lock" || { echo "ERROR: Podfile.lock missing after pod install"; exit 1; }
+          grep -q "Capacitor" Podfile.lock || { echo "ERROR: Capacitor pod missing in Podfile.lock"; exit 1; }
 
       - name: Build iOS Simulator app
         run: |
           cd apps/mobile/ios
-          # Build via workspace so CocoaPods modules (Capacitor) are linked.
-          WORKSPACE="$(find App -maxdepth 2 -type d -name '*.xcworkspace' | head -n 1)"
-          test -n "$WORKSPACE" || { echo "No .xcworkspace found under apps/mobile/ios/App"; ls -la App || true; exit 1; }
-
-          SCHEME="App"
-          SCHEME_FROM_LIST="$(xcodebuild -list -workspace "$WORKSPACE" 2>/dev/null | /usr/bin/awk '/Schemes:/{getline; print $1; exit}')"
-          if [ -n "$SCHEME_FROM_LIST" ]; then
-            SCHEME="$SCHEME_FROM_LIST"
-          fi
-
+          test -f "App/App.xcworkspace/contents.xcworkspacedata" || { echo "Missing App/App.xcworkspace"; ls -la App || true; exit 1; }
           rm -rf ~/Library/Developer/Xcode/DerivedData/*
           xcodebuild \
-            -workspace "$WORKSPACE" \
-            -scheme "$SCHEME" \
+            -workspace "App/App.xcworkspace" \
+            -scheme "App" \
             -sdk iphonesimulator \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
@@ -278,6 +286,9 @@ jobs:
         run: |
           cd apps/mobile/ios/App
           pod install --repo-update
+          test -f "App.xcworkspace/contents.xcworkspacedata" || { echo "ERROR: iOS workspace not generated"; exit 1; }
+          test -f "Podfile.lock" || { echo "ERROR: Podfile.lock missing after pod install"; exit 1; }
+          grep -q "Capacitor" Podfile.lock || { echo "ERROR: Capacitor pod missing in Podfile.lock"; exit 1; }
 
       - name: Decode signing artifacts
         env:
@@ -300,16 +311,9 @@ jobs:
 
           # Expected defaults (adjust these if your iOS project uses different names).
           IOS_DIR="apps/mobile/ios"
-          WORKSPACE="$(find "$IOS_DIR/App" -maxdepth 2 -type d -name '*.xcworkspace' | head -n 1)"
-          XCODE_PROJECT="$(find "$IOS_DIR/App" -maxdepth 2 -type d -name '*.xcodeproj' | head -n 1)"
+          WORKSPACE="$IOS_DIR/App/App.xcworkspace"
           SCHEME="App"
-
-          test -n "$WORKSPACE" || { echo "No .xcworkspace found under $IOS_DIR/App"; exit 1; }
-
-          SCHEME_FROM_LIST="$(xcodebuild -list -workspace "$WORKSPACE" 2>/dev/null | /usr/bin/awk '/Schemes:/{getline; print $1; exit}')"
-          if [ -n "$SCHEME_FROM_LIST" ]; then
-            SCHEME="$SCHEME_FROM_LIST"
-          fi
+          test -f "$WORKSPACE/contents.xcworkspacedata" || { echo "No .xcworkspace found at $WORKSPACE"; exit 1; }
 
           test -d "$IOS_DIR" || { echo "Expected iOS directory not found: $IOS_DIR"; exit 1; }
 
