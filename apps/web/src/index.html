@@ -91,6 +91,13 @@
         <video id="video" autoplay playsinline></video>
         <canvas id="canvas" style="display:none;"></canvas>
         <div class="row">
+          <span class="pill">Camera</span>
+          <select id="cameraModeSelect">
+            <option value="front">Front (interactive)</option>
+            <option value="rear">Rear (fixed 4x6)</option>
+          </select>
+          <span class="pill">Name</span>
+          <input id="nameInput" type="text" placeholder="Enter name (optional)" style="padding:10px 14px;border-radius:8px;border:0;min-width:180px;" />
           <span class="pill">Size</span>
           <select id="sizeSelect"></select>
           <span class="pill">Orientation</span>
@@ -140,6 +147,8 @@
       const preview = document.getElementById("preview");
       const sizeSelect = document.getElementById("sizeSelect");
       const orientationSelect = document.getElementById("orientationSelect");
+      const cameraModeSelect = document.getElementById("cameraModeSelect");
+      const nameInput = document.getElementById("nameInput");
       const frameGrid = document.getElementById("frameGrid");
       const startCameraBtn = document.getElementById("startCameraBtn");
       const stopCameraBtn = document.getElementById("stopCameraBtn");
@@ -159,6 +168,8 @@
       let selectedFrameId = "";
       let framePreviewUrls = {}; // frameId -> full preview URL
       let activeStream = null;
+      let rearFixedFrameId = "";
+      let currentCaptureBlob = null;
 
       function setStatus(message, isError = false) {
         statusEl.textContent = message;
@@ -228,6 +239,126 @@
         captureBtn.disabled = !isOn;
       }
 
+      function isRearMode() {
+        return cameraModeSelect.value === "rear";
+      }
+
+      function isMobileDevice() {
+        return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+      }
+
+      function isCapacitorNative() {
+        return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform());
+      }
+
+      function getSessionTimestamp() {
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      }
+
+      function sanitizeName(raw) {
+        const val = (raw || "").trim();
+        if (!val) return "NO_NAME";
+        return val.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 60) || "NO_NAME";
+      }
+
+      function triggerDownloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+      }
+
+      function blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = String(reader.result || "");
+            const base64 = result.includes(",") ? result.split(",")[1] : result;
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      async function ensureNativeStoragePermission() {
+        if (!isCapacitorNative()) return;
+        const fsPlugin = window.Capacitor?.Plugins?.Filesystem;
+        if (!fsPlugin || typeof fsPlugin.requestPermissions !== "function") return;
+        try {
+          const perm = await fsPlugin.requestPermissions();
+          logDebug("Filesystem permission", perm || {});
+        } catch (e) {
+          logDebug("Filesystem permission request failed", { message: e.message });
+        }
+      }
+
+      async function saveBlobToPhotoBoothFolder(blob, filename) {
+        if (!isCapacitorNative()) {
+          triggerDownloadBlob(blob, filename);
+          return { mode: "download", path: `Downloads/${filename}` };
+        }
+        const fsPlugin = window.Capacitor?.Plugins?.Filesystem;
+        if (!fsPlugin || typeof fsPlugin.writeFile !== "function") {
+          triggerDownloadBlob(blob, filename);
+          return { mode: "download", path: `Downloads/${filename}` };
+        }
+        try {
+          await ensureNativeStoragePermission();
+          if (typeof fsPlugin.mkdir === "function") {
+            await fsPlugin.mkdir({
+              path: "PhotoBooth",
+              directory: "DOCUMENTS",
+              recursive: true,
+            });
+          }
+          const data = await blobToBase64(blob);
+          await fsPlugin.writeFile({
+            path: `PhotoBooth/${filename}`,
+            data,
+            directory: "DOCUMENTS",
+            recursive: true,
+          });
+          return { mode: "native", path: `Documents/PhotoBooth/${filename}` };
+        } catch (e) {
+          logDebug("Native save failed; falling back to browser download", { message: e.message });
+          triggerDownloadBlob(blob, filename);
+          return { mode: "download", path: `Downloads/${filename}` };
+        }
+      }
+
+      async function downloadFinalToDevice(finalUrl, filename) {
+        const res = await apiFetch(finalUrl, {}, "download-final");
+        if (!res.ok) throw new Error(`Final download failed (${res.status}) ${await readErrorBody(res)}`);
+        const blob = await res.blob();
+        return saveBlobToPhotoBoothFolder(blob, filename);
+      }
+
+      function applyCameraModeUI() {
+        if (!isMobileDevice()) {
+          cameraModeSelect.value = "front";
+          cameraModeSelect.disabled = true;
+        }
+        if (isRearMode()) {
+          sizeSelect.value = "4x6";
+          orientationSelect.value = "portrait";
+          sizeSelect.disabled = true;
+          orientationSelect.disabled = true;
+          frameGrid.style.display = "none";
+        } else {
+          sizeSelect.disabled = false;
+          orientationSelect.disabled = false;
+          if (currentImageId) frameGrid.style.display = "grid";
+        }
+        updatePreviewRatio();
+      }
+
       function fillSelect(selectEl, options, defaultValue = "") {
         selectEl.innerHTML = "";
         for (const val of options) {
@@ -254,7 +385,7 @@
           return;
         }
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" },
+          video: { facingMode: isRearMode() ? "environment" : "user" },
           audio: false,
         });
         activeStream = stream;
@@ -340,8 +471,11 @@
         currentFinalUrl = "";
 
         // Choose a default frame preference.
-        const defaultFrame =
-          frames.some((f) => f.id === "story-memories") ? "story-memories" : (frames[0]?.id || "");
+        const defaultFrame = frames.some((f) => f.id === "story-memories")
+          ? "story-memories"
+          : (frames[0]?.id || "");
+        if (!rearFixedFrameId && defaultFrame) rearFixedFrameId = defaultFrame;
+        if (frames.some((f) => f.id === "story-memories")) rearFixedFrameId = "story-memories";
 
         for (const f of frames) {
           const card = document.createElement("div");
@@ -363,6 +497,7 @@
           card.appendChild(name);
 
           card.addEventListener("click", async () => {
+            if (isRearMode()) return;
             setSelectedFrameVisual(f.id);
             try {
               await composePreviewForFrame(f.id);
@@ -380,9 +515,12 @@
           : (defaultFrame || frames[0]?.id || "");
 
         if (fallbackSelection) {
-          setSelectedFrameVisual(fallbackSelection);
+          const lockedSelection = isRearMode()
+            ? (frames.some((f) => f.id === "story-memories") ? "story-memories" : (rearFixedFrameId || fallbackSelection))
+            : fallbackSelection;
+          setSelectedFrameVisual(lockedSelection);
           if (currentImageId) {
-            await composePreviewForFrame(fallbackSelection);
+            await composePreviewForFrame(lockedSelection);
           } else {
             setStatus(`Choose a frame (capture to preview). Frames: ${frames.length}`);
           }
@@ -405,6 +543,7 @@
         const ctx = canvas.getContext("2d");
         ctx.drawImage(video, 0, 0);
         const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
+        currentCaptureBlob = blob;
 
         const form = new FormData();
         form.append("image", blob, "capture.jpg");
@@ -428,8 +567,14 @@
         setStatus("Image captured. Preparing frame options...");
         await loadFrames(false);
 
+        const ts = getSessionTimestamp();
+        const baseName = sanitizeName(nameInput.value);
+        const originalFilename = `${baseName}_${ts}_original.jpg`;
+        const originalSave = await saveBlobToPhotoBoothFolder(blob, originalFilename);
+        logDebug("Original image saved", { filename: originalFilename, ...originalSave });
+
         // Reveal frame selection + preview + final options after capture.
-        frameGrid.style.display = "grid";
+        frameGrid.style.display = isRearMode() ? "none" : "grid";
         previewCard.style.display = "block";
         prepareFinalBtn.style.display = "";
         finalFormat.style.display = "";
@@ -465,6 +610,12 @@
         currentFinalUrl = href;
         finalizedImageId = currentImageId;
         finalLinkWrap.innerHTML = `Final ready: <a href="${href}" target="_blank" rel="noopener">Open ${data.output_format.toUpperCase()}</a>`;
+        const ts = getSessionTimestamp();
+        const baseName = sanitizeName(nameInput.value);
+        const ext = data.output_format === "jpeg" ? "jpg" : data.output_format;
+        const finalFilename = `${baseName}_${ts}_final.${ext}`;
+        const finalSave = await downloadFinalToDevice(href, finalFilename);
+        logDebug("Final file saved", { filename: finalFilename, format: data.output_format, ...finalSave });
         setStatus(`Final ${data.output_format.toUpperCase()} prepared. Previews cleared.`);
 
         // Ensure print is available for this freshly prepared final.
@@ -509,6 +660,10 @@
       });
 
       sizeSelect.addEventListener("change", async () => {
+        if (isRearMode()) {
+          sizeSelect.value = "4x6";
+          return;
+        }
         updatePreviewRatio();
         try {
           await loadFrames(false);
@@ -518,6 +673,10 @@
       });
 
       orientationSelect.addEventListener("change", async () => {
+        if (isRearMode()) {
+          orientationSelect.value = "portrait";
+          return;
+        }
         updatePreviewRatio();
         try {
           await loadFrames(false);
@@ -526,14 +685,29 @@
         }
       });
 
+      cameraModeSelect.addEventListener("change", async () => {
+        const wasOn = !!activeStream;
+        if (wasOn) stopCamera();
+        applyCameraModeUI();
+        try {
+          await loadFrames(false);
+          if (wasOn) await startCamera();
+          setStatus(isRearMode() ? "Rear camera mode active: fixed 4x6 + fixed frame." : "Front camera mode active: interactive options enabled.");
+        } catch (e) {
+          setStatus(`Mode switch failed: ${e.message}`, true);
+        }
+      });
+
       (async function init() {
         // Security-friendly default: keep camera OFF until user explicitly starts it.
         setCameraButtonsState(false);
         setStatus("Camera is OFF. Click Start Camera.");
         logDebug("App init", { apiBase: API_BASE, enable8x11: ENABLE_8X11, online: navigator.onLine });
+        await ensureNativeStoragePermission();
         await checkApiHealth();
         try {
           await loadOptions();
+          applyCameraModeUI();
           updatePreviewRatio();
           await loadFrames(false);
         } catch (e) {

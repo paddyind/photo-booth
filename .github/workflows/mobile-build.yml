@@ -4,10 +4,6 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
     inputs:
       build_apk:
@@ -104,7 +100,7 @@ jobs:
       - name: Ensure @capacitor/android is installed
         run: |
           cd apps/mobile
-          npm install @capacitor/core@5 @capacitor/android@5 --no-save
+          npm install @capacitor/core@5 @capacitor/android@5 @capacitor/filesystem@5 --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |
@@ -222,7 +218,7 @@ jobs:
       - name: Ensure @capacitor/ios is installed
         run: |
           cd apps/mobile
-          npm install @capacitor/core@5 @capacitor/ios@5 --no-save
+          npm install @capacitor/core@5 @capacitor/ios@5 @capacitor/filesystem@5 --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |
@@ -309,7 +305,7 @@ jobs:
       - name: Ensure @capacitor/ios is installed
         run: |
           cd apps/mobile
-          npm install @capacitor/core@5 @capacitor/ios@5 --no-save
+          npm install @capacitor/core@5 @capacitor/ios@5 @capacitor/filesystem@5 --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |

@@ -63,6 +63,15 @@ The frame will then appear automatically in the frame dropdown after selecting t
 - After capturing an image, the app generates a **preview** for the current selection `(size, orientation, frame)`.
 - If the user changes `(size, orientation, frame)` and then returns to a previous selection, the system reuses the existing preview file (it will not re-render if already cached on disk).
 - When the user clicks **Prepare Final** (PNG or PDF), the backend generates the final output and then **deletes all preview images** for that `image_id`.
+- Camera mode behavior:
+  - Mobile devices can switch between **Front** and **Rear** camera.
+  - **Rear mode** is locked to `4x6` + `portrait` + `story-memories` (if present).
+  - **Front mode** keeps full interactive options (size/orientation/frame).
+  - On laptops/desktops, camera mode is forced to front.
+- File save behavior:
+  - Original capture and final output are saved with `NAME_or_NO_NAME + timestamp` in the filename.
+  - On Capacitor mobile builds, files are saved to `Documents/PhotoBooth/`.
+  - In browser/laptop fallback mode, files download to the browser default Downloads location.
 
 This makes the preview responsive and ensures the final file matches exactly what the user saw before printing.
 
@@ -95,6 +104,7 @@ CI warm-up:
 
 Local Docker Desktop:
 - When you test mobile apps locally, run `docker compose up -d backend web` first so the phone/tablet can reach the latest API.
+- For mobile testing on same Wi-Fi, set `PHOTOBOOTH_API_BASE` (or workflow `api_base_url`) to `http://<your-laptop-lan-ip>:8000`.
 
 ### Notes about iOS IPA
 
