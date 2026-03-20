@@ -185,8 +185,8 @@ jobs:
         run: |
           cd apps/mobile/ios
           # Prefer xcworkspace when CocoaPods is installed (Capacitor typically generates it).
-          WORKSPACE="$(ls -1 App/*.xcworkspace 2>/dev/null | head -n 1)"
-          XCODE_PROJECT="$(ls -1 App/*.xcodeproj 2>/dev/null | head -n 1)"
+          WORKSPACE="$(find App -maxdepth 2 -type d -name '*.xcworkspace' | head -n 1)"
+          XCODE_PROJECT="$(find App -maxdepth 2 -type d -name '*.xcodeproj' | head -n 1)"
 
           if [ -z "$WORKSPACE" ] && [ -z "$XCODE_PROJECT" ]; then
             echo "No Xcode project/workspace found under apps/mobile/ios/App"
@@ -304,8 +304,8 @@ jobs:
 
           # Expected defaults (adjust these if your iOS project uses different names).
           IOS_DIR="apps/mobile/ios"
-          WORKSPACE="$(ls -1 "$IOS_DIR/App"/*.xcworkspace 2>/dev/null | head -n 1)"
-          XCODE_PROJECT="$(ls -1 "$IOS_DIR/App"/*.xcodeproj 2>/dev/null | head -n 1)"
+          WORKSPACE="$(find "$IOS_DIR/App" -maxdepth 2 -type d -name '*.xcworkspace' | head -n 1)"
+          XCODE_PROJECT="$(find "$IOS_DIR/App" -maxdepth 2 -type d -name '*.xcodeproj' | head -n 1)"
           SCHEME="App"
 
           if [ -n "$WORKSPACE" ]; then
