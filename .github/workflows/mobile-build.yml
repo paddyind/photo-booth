@@ -98,6 +98,11 @@ jobs:
         with:
           packages: "tools platform-tools platforms;android-36 build-tools;35.0.0"
 
+      - name: Ensure @capacitor/android is installed
+        run: |
+          cd apps/mobile
+          npm install @capacitor/android --no-save
+
       - name: Start backend/web (CI Docker warm-up)
         run: |
           echo "Skipping backend/web Docker warm-up in mobile CI (packaging doesn't require live API)."
@@ -153,6 +158,11 @@ jobs:
         run: |
           cd apps/mobile
           npm ci || npm install --legacy-peer-deps
+
+      - name: Ensure @capacitor/ios is installed
+        run: |
+          cd apps/mobile
+          npm install @capacitor/ios --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |
@@ -222,6 +232,11 @@ jobs:
         run: |
           cd apps/mobile
           npm ci || npm install --legacy-peer-deps
+
+      - name: Ensure @capacitor/ios is installed
+        run: |
+          cd apps/mobile
+          npm install @capacitor/ios --no-save
 
       - name: Start backend/web (CI Docker warm-up)
         run: |
