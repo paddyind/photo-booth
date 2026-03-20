@@ -115,7 +115,10 @@ jobs:
           npm run prepare-www
           # Create native Android project files if missing.
           npx cap add android
-          npx cap sync android
+          npx cap sync android --force
+          echo "Android generated files:"
+          ls -la apps/mobile/android
+          test -f apps/mobile/android/settings.gradle || { echo "ERROR: apps/mobile/android/settings.gradle missing after cap sync"; exit 1; }
 
       - name: Build Android APK
         run: |
@@ -176,7 +179,7 @@ jobs:
           npm run prepare-www
           # Create native iOS project files if missing.
           npx cap add ios
-          npx cap sync ios
+          npx cap sync ios --force
 
       - name: Build iOS Simulator app
         run: |
@@ -249,7 +252,7 @@ jobs:
           PHOTOBOOTH_ENABLE_8X11="${{ github.event_name == 'workflow_dispatch' && inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}" \
           npm run prepare-www
           npx cap add ios
-          npx cap sync ios
+          npx cap sync ios --force
 
       - name: Decode signing artifacts
         env:
