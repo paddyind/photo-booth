@@ -593,13 +593,50 @@
         return new Promise((resolve) => setTimeout(resolve, ms));
       }
 
+      /**
+       * Old APK / cached www may lack #captureCountdownOverlay or Timer select — create overlay so countdown is visible.
+       */
+      function ensureCaptureCountdownOverlayEl() {
+        let el = document.getElementById("captureCountdownOverlay");
+        if (el) return el;
+        el = document.createElement("div");
+        el.id = "captureCountdownOverlay";
+        el.className = "capture-countdown-overlay";
+        el.setAttribute("aria-hidden", "true");
+        el.style.cssText =
+          "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;" +
+          "background:rgba(0,0,0,0.55);font-size:clamp(64px,20vw,128px);font-weight:800;color:#fff;" +
+          "z-index:50;line-height:1;pointer-events:none;text-shadow:0 4px 24px rgba(0,0,0,0.85);";
+        const stage = document.querySelector(".video-stage");
+        if (stage) {
+          if (stage.style.position !== "relative" && stage.style.position !== "absolute") {
+            const cs = window.getComputedStyle(stage);
+            if (cs.position === "static") stage.style.position = "relative";
+          }
+          stage.appendChild(el);
+        } else if (video && video.parentElement) {
+          const wrap = video.parentElement;
+          if (window.getComputedStyle(wrap).position === "static") wrap.style.position = "relative";
+          wrap.appendChild(el);
+        } else {
+          document.body.appendChild(el);
+        }
+        return el;
+      }
+
       function getCaptureCountdownSeconds() {
         if (CAPTURE_COUNTDOWN_LOCKED) {
           const n = Number(rawCaptureCountdown);
           if (!Number.isFinite(n)) return 5;
           return Math.min(60, Math.max(0, Math.round(n)));
         }
-        const v = Number(captureTimerSelect && captureTimerSelect.value);
+        if (!captureTimerSelect) {
+          // Stale mobile bundle without Timer control: still give guests time to pose (critical for booth).
+          return typeof isMobileDevice === "function" && (isMobileDevice() || isCapacitorNative())
+            ? 5
+            : 0;
+        }
+        const v = Number(captureTimerSelect.value);
         return Number.isFinite(v) ? Math.min(60, Math.max(0, v)) : 0;
       }
 
@@ -607,8 +644,7 @@
       async function runCaptureCountdownOverlay() {
         const totalSec = getCaptureCountdownSeconds();
         if (totalSec <= 0) return true;
-        const overlay = document.getElementById("captureCountdownOverlay");
-        if (!overlay) return true;
+        const overlay = ensureCaptureCountdownOverlayEl();
         overlay.hidden = false;
         overlay.setAttribute("aria-hidden", "false");
         try {

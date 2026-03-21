@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import shutil
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
@@ -50,6 +51,31 @@ COMPOSE_CACHE_VERSION = "fit3"
 def _env_truthy(name: str) -> bool:
     v = (os.getenv(name) or "").strip().lower()
     return v in ("1", "true", "yes", "on", "y")
+
+
+def _unlink_preview_best_effort(path: Path) -> None:
+    """
+    Remove a cached preview file. On Windows the file may still be locked (WinError 32) right
+    after the phone loaded /previews/... — retry briefly, then give up without raising.
+    """
+    for attempt in range(18):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            winerr = getattr(e, "winerror", None)
+            busy = winerr == 32 or (
+                os.name == "nt"
+                and "being used by another process" in str(e).lower()
+            )
+            if busy:
+                time.sleep(0.06 * (attempt + 1))
+                continue
+            logger.warning("preview unlink skipped: %s — %s", path, e)
+            return
+    logger.warning("preview unlink gave up (file still busy): %s", path)
 
 
 def _safe_filename_component(value: str) -> str:
@@ -446,12 +472,12 @@ def _compose_final_body(payload: FinalCreate) -> dict:
     if session_folder:
         prev_dir = DATA_DIR / session_folder / "previews"
         for fp in prev_dir.glob(f"{payload.image_id}__*.jpg"):
-            fp.unlink(missing_ok=True)
+            _unlink_preview_best_effort(fp)
     else:
         for fp in PREVIEWS_DIR.glob(f"{payload.image_id}__*.jpg"):
-            fp.unlink(missing_ok=True)
+            _unlink_preview_best_effort(fp)
         legacy_preview = PREVIEWS_DIR / f"{payload.image_id}.jpg"
-        legacy_preview.unlink(missing_ok=True)
+        _unlink_preview_best_effort(legacy_preview)
 
     # Optional: drop a copy into print-queue for folder-based auto-print (see scripts/print_watcher.py queue mode).
     if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE"):
