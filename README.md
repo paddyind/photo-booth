@@ -17,7 +17,7 @@ Consumer-friendly photo booth platform for phone/tablet capture, frame overlays,
 - `shared/frames`: Frame packs and metadata (`meta.json`) by print size.
 - `data`: Runtime storage when using **Docker** backend (host-mounted).
 - `data-standalone`: Optional runtime storage for **standalone** uvicorn (default; gitignored) when running beside Docker.
-- `scripts/`: `run-api-standalone.*` and `setup-standalone-venv.*` for host-based API (default port **8001**).
+- `scripts/`: **`run-api-standalone.sh`** (Mac/Linux) and **`run-api-standalone.bat`** (Windows) are self-contained: they require **Python 3.10+**, then create/update **`.venv`**, install **`apps/api/requirements.txt`** every run (quick, idempotent), and start the API on **`0.0.0.0:8001`** by default. Optional **`setup-standalone-venv.*`** only creates the venv without starting the server.
 
 ## Quick Start
 
@@ -44,8 +44,8 @@ Use **Docker** for the normal stack and **standalone** for a second API process 
 
 ```bash
 chmod +x scripts/*.sh
-./scripts/setup-standalone-venv.sh    # once
-./scripts/run-api-standalone.sh       # API on http://0.0.0.0:8001
+./scripts/run-api-standalone.sh       # creates .venv + installs deps on first run, then starts API on :8001
+# Optional: ./scripts/setup-standalone-venv.sh  (same venv setup without starting the server)
 ```
 
 Optional overrides:
@@ -57,8 +57,8 @@ API_PORT=8002 DATA_DIR="$PWD/data-alt" ./scripts/run-api-standalone.sh
 ### Windows (cmd)
 
 ```bat
-scripts\setup-standalone-venv.bat
 scripts\run-api-standalone.bat
+Optional: `scripts\setup-standalone-venv.bat` (venv only, no server)
 ```
 
 Optional: `set API_PORT=8002` before `run-api-standalone.bat`, or `set DATA_DIR=D:\pb-data`.

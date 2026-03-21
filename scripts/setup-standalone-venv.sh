@@ -1,16 +1,35 @@
 #!/usr/bin/env bash
-# One-time (or occasional) setup: Python venv + API dependencies for standalone mode.
+# Optional: create .venv only (no server). Same Python rules as run-api-standalone.sh.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-if [[ ! -x "$(command -v python3)" ]]; then
-  echo "python3 not found. Install Python 3.11+ and retry."
+REQ="$ROOT/apps/api/requirements.txt"
+[[ -f "$REQ" ]] || { echo "Missing $REQ"; exit 1; }
+
+pick_python() {
+  for cmd in python3 python; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+      if "$cmd" -c 'import sys; exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+        printf '%s' "$cmd"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+PY="$(pick_python)" || {
+  echo "Python 3.10+ not found."
   exit 1
+}
+if [[ ! -d "$ROOT/.venv" ]]; then
+  echo "Creating .venv with $($PY --version 2>&1) …"
+  "$PY" -m venv "$ROOT/.venv"
+else
+  echo "Using existing .venv"
 fi
-python3 -m venv .venv
 # shellcheck source=/dev/null
-source .venv/bin/activate
+source "$ROOT/.venv/bin/activate"
 python -m pip install --upgrade pip
-pip install -r apps/api/requirements.txt
-echo "Done. Activate with: source .venv/bin/activate"
-echo "Then run: ./scripts/run-api-standalone.sh"
+pip install -r "$REQ"
+echo "Done. Run: ./scripts/run-api-standalone.sh"
