@@ -13,19 +13,20 @@ FORCE STOP / RESTART (if frozen or errors)
   • scripts\stop-photo-booth-standalone.bat    ← stop only; then run run-api-standalone.bat
   • Plain-English guide:  scripts\PHOTO-BOOTH-END-USER-START.txt
 
-PORT 8001 “ALREADY IN USE” — YOU USUALLY DO NOTHING
-  • The script automatically tries 8001, then 8002, 8003, … until one is free.
+PORT 8001 (DEFAULT API_PORT) — STAYS ON 8001
+  • By default the script STOPS whatever is listening on API_PORT (8001), then binds there.
+    Your phone URL can stay http://YOUR-PC-IP:8001 — no silent switch to 8002+.
+  • Legacy: set PHOTOBOOTH_PORT_FALLBACK=1 in .env.standalone to scan 8002, 8003, … (then match that port on the phone).
   • After it starts, read the box in the window:
       Local:  http://127.0.0.1:PORT
       LAN:    http://YOUR-PC-IP:PORT
   • On the phone, set PHOTOBOOTH_API_BASE to the LAN line (same Wi-Fi as the PC).
-  • If the PORT is 8002 (or higher), use that number — not always 8001.
 
 WINERROR 10013 / “access permissions” ON BIND (NOT THE PRINTER)
   • If Python crashes with PermissionError or WinError 10013 on socket bind, Windows is blocking
     that port — often NOT because another app has it, but because Hyper-V, WSL2, or Docker Desktop
     reserved an “excluded port range” that includes 8001 (sometimes many ports in the 79xx–81xx range).
-  • The script now skips blocked ports and tries 8002, 8003, … automatically. If ALL fail, try:
+  • Pinned mode keeps retrying API_PORT; it cannot “un-reserve” an excluded range. If it still fails, try:
       set API_PORT=18080
       scripts\run-api-standalone.bat
   • Inspect excluded ranges (cmd or PowerShell):
@@ -39,8 +40,17 @@ TEST FROM PHONE BROWSER BEFORE THE APP
   • You should see JSON like:  "status":"ok" , "service":"photo-booth-api"
   • If that works, the mobile app can use the same base URL.
 
+LAPTOP MOBILE HOTSPOT (phone joins the PC’s network)
+  • This is OK — the phone and laptop are on the same private LAN. Use the same LAN: URL as for Wi‑Fi.
+  • The IP is still the one shown in the server window (often 192.168.x.x). Open /health on the phone.
+  • Windows Firewall: allow inbound TCP on your API PORT for Python (see FIREWALL section below).
+
+COMMON TYPO — ERR_ADDRESS_UNREACHABLE
+  • Private LAN addresses almost always start with  192.168.   (192 — one nine two)
+  • If you type  198.168.…   (198 — one nine eight) the phone cannot reach the PC. Fix the first octet.
+
 PHONE URL RULES
-  • Use the PC’s IPv4 address (shown as LAN), e.g. http://192.168.1.50:8002
+  • Use the PC’s IPv4 address (shown as LAN), e.g. http://192.168.1.50:8001
   • Do NOT use 127.0.0.1 on the phone (that means “the phone itself”).
 
 WINDOWS FIREWALL (if the phone cannot connect but the PC browser can)
@@ -50,15 +60,14 @@ WINDOWS FIREWALL (if the phone cannot connect but the PC browser can)
   • Or: Windows Security → Firewall → Advanced settings → Inbound Rules → New Rule → Port → TCP → 8001 → Allow.
   • Test from another machine:  curl http://YOUR-PC-IP:8001/health
 
-OPTIONAL: FORCE EXACT PORT OR FAIL
-  • set PHOTOBOOTH_STRICT_PORT=1
-  • scripts\run-api-standalone.bat
-  • If that port is busy, the script stops and prints how to find the process.
+OPTIONAL: LEGACY — SCAN 8002+ OR STRICT SINGLE PORT
+  • PHOTOBOOTH_PORT_FALLBACK=1  — if API_PORT is busy, try 8002, 8003, …
+  • With fallback on: PHOTOBOOTH_STRICT_PORT=1  — fail if API_PORT busy (no scan).
 
-OPTIONAL: PICK A START PORT
+OPTIONAL: PICK A DIFFERENT FIXED PORT
   • set API_PORT=8010
   • scripts\run-api-standalone.bat
-  • (Still auto-increments if 8010–8034 are all taken.)
+  • (Default: clears listeners on that port; with PHOTOBOOTH_PORT_FALLBACK=1 it may scan upward if still busy.)
 
 OPTIONAL: FREE A PORT MANUALLY (only if you really need to)
   • netstat -ano | findstr :8001

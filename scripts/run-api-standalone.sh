@@ -7,8 +7,7 @@
 # Queue mode: PHOTOBOOTH_PRINT_WATCH_MODE=queue and PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE=1 (see README).
 # Windows: scripts/run-api-standalone.bat (same behavior).
 #
-# Port: if API_PORT (default 8001) is busy, the next free port is used (8002, …) and printed clearly.
-# Require an exact port only: PHOTOBOOTH_STRICT_PORT=1 ./scripts/run-api-standalone.sh
+# Port: default API_PORT (8001) is kept — listeners on that port are stopped, then bind (no 8002+ unless PHOTOBOOTH_PORT_FALLBACK=1).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -34,8 +33,8 @@ cat <<'EOS'
      ./scripts/restart-photo-booth-standalone.sh
 
   TEST PHONE: open the LAN URL printed below + /health in Safari/Chrome
-  MOBILE APK: stop/restart does not change this Mac's Wi-Fi IP. Pin the port with
-    API_PORT=… and PHOTOBOOTH_STRICT_PORT=1 in .env.standalone so the URL matches your build.
+  MOBILE APK: default is fixed API_PORT (8001) — busy ports are cleared automatically.
+    Legacy 8002+ scan: PHOTOBOOTH_PORT_FALLBACK=1 in .env.standalone
 
 ============================================================
 

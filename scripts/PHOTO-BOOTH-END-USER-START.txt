@@ -25,17 +25,18 @@ TEST THE PHONE BEFORE THE APP
   • On the phone browser, open:  that same URL with /health on the end
     Example:  http://192.168.1.50:8003/health
   • You should see text like "status" and "ok". Same address goes in the app.
+  • LAPTOP HOTSPOT: if the phone is on the hotspot this PC created, still use that LAN IP — it’s the same idea as Wi‑Fi.
+  • TYPING: the address must start with  192.168  (one-nine-two). If you type  198.168  the page will
+    not load (ERR_ADDRESS_UNREACHABLE). Compare carefully when typing on the phone.
 
 MOBILE APP (APK) — STOP / RESTART WILL NOT FORCE A NEW BUILD
   • Restarting the booth does NOT give this PC a new Wi-Fi IP. Your phone URL stays the same
     unless you change Wi-Fi networks or the router assigns a new IP (unusual during one event).
-  • The PORT number might change between runs if the default port was busy (8001 → 8002…).
-    To always use the SAME port as in your app build, add to .env.standalone:
-      API_PORT=8001
-      PHOTOBOOTH_STRICT_PORT=1
-    (Use the port you put in PHOTOBOOTH_API_BASE when you built the app.)
-  • If strict mode says the port is busy, run stop-photo-booth-standalone, then start again —
-    still no need to rebuild the app if IP + port match.
+  • The PORT stays at API_PORT (default 8001): startup clears anything listening on that port
+    so PHOTOBOOTH_API_BASE can stay http://YOUR-PC-IP:8001. Rebuild only if you change API_PORT
+    or turn on PHOTOBOOTH_PORT_FALLBACK=1 and the console shows a different port.
+  • If startup still cannot bind, run stop-photo-booth-standalone, then start again — or set API_PORT
+    to another free port and rebuild the app URL to match.
 
 PRINTER
   • Put the exact printer name in .env.standalone (copy from .env.standalone.example)
@@ -60,5 +61,8 @@ RESTART IF STUCK
   OR
       ./scripts/stop-photo-booth-standalone.sh
       ./scripts/run-api-standalone.sh
+
+  • Same as Windows for APK URL: default port is 8001 (API_PORT); the script clears listeners on
+    that port so you usually do not rebuild the app between runs.
 
 ================================================================================

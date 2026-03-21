@@ -178,7 +178,11 @@
           <div id="connectivityHealthLine" style="margin-top:6px;"></div>
           <p class="muted" style="margin:8px 0 0;font-size:12px;color:#8a9faf;">
             Use your PC’s <strong>LAN IPv4</strong> in <code>PHOTOBOOTH_API_BASE</code> (not <code>127.0.0.1</code>). Match the
-            <strong>port</strong> shown when the API starts (8002 if 8001 was busy). Same Wi‑Fi as the phone.
+            <strong>port</strong> in <code>PHOTOBOOTH_API_BASE</code> (default standalone: <strong>8001</strong>; only differs if you set
+            <code>API_PORT</code> or <code>PHOTOBOOTH_PORT_FALLBACK=1</code>). Same network as the phone
+            (Wi‑Fi or <strong>laptop hotspot</strong> is fine).
+            <strong>Typo check:</strong> home/hotspot IPs are usually <code>192.168.…</code> (one‑nine‑<strong>two</strong>) —
+            <code>198.168.…</code> is wrong and causes <code>ERR_ADDRESS_UNREACHABLE</code>.
             <strong>Windows:</strong> allow inbound TCP on that port for Python (see README / scripts README).
           </p>
         </div>

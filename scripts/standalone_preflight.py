@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """
 Used by run-api-standalone.sh / .bat:
-  - resolve-port: pick a free TCP port (default: try API_PORT, then +1 … +24).
+  - resolve-port: choose port for uvicorn (see env below).
   - check-port: fail if busy (legacy / strict checks).
   - lan-ip: print likely LAN IPv4 for PHOTOBOOTH_API_BASE.
 
 Env:
-  PHOTOBOOTH_STRICT_PORT=1  — do not auto-pick another port; exit with help if preferred is busy.
+  PHOTOBOOTH_PORT_FALLBACK=1 — legacy: if API_PORT busy, try API_PORT+1 … (mobile URL changes).
+  (unset / 0) — default: keep API_PORT only; kill processes listening on that port, then retry
+              (so http://IP:8001 stays stable for baked-in PHOTOBOOTH_API_BASE).
+
+  PHOTOBOOTH_STRICT_PORT=1 — only used when PHOTOBOOTH_PORT_FALLBACK=1: fail if preferred busy
+                             instead of scanning.
 """
 from __future__ import annotations
 
@@ -15,6 +20,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 
 # Avoid spamming the same Windows 10013 help line for every port in the scan.
 _win32_bind_denied_hint_shown = False
@@ -23,6 +29,146 @@ _win32_bind_denied_hint_shown = False
 def _strict_port() -> bool:
     v = (os.environ.get("PHOTOBOOTH_STRICT_PORT") or "").strip().lower()
     return v in ("1", "true", "yes", "on")
+
+
+def _port_fallback_enabled() -> bool:
+    """If True, scan API_PORT+1… when busy. Default False = pin API_PORT and clear listeners."""
+    v = (os.environ.get("PHOTOBOOTH_PORT_FALLBACK") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def _listen_pids_on_port(port: int) -> set[int]:
+    pids: set[int] = set()
+    mypid = os.getpid()
+    if sys.platform == "win32":
+        try:
+            out = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    f"$x = Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue; "
+                    f"$x | ForEach-Object {{ $_.OwningProcess }}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            for line in out.stdout.splitlines():
+                s = line.strip()
+                if s.isdigit():
+                    pid = int(s)
+                    if pid > 0 and pid != mypid:
+                        pids.add(pid)
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            pass
+        # Fallback: netstat -ano (English headers)
+        if not pids:
+            try:
+                out = subprocess.run(
+                    ["cmd", "/c", f"netstat -ano"],
+                    capture_output=True,
+                    text=True,
+                    timeout=25,
+                )
+                needle = f":{port}"
+                for line in out.stdout.splitlines():
+                    if "LISTENING" not in line.upper() or needle not in line:
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 5 and parts[-1].isdigit():
+                        pid = int(parts[-1])
+                        if pid > 0 and pid != mypid:
+                            pids.add(pid)
+            except (OSError, subprocess.TimeoutExpired, ValueError):
+                pass
+    else:
+        for args in (
+            ["lsof", "-nP", "-iTCP", f":{port}", "-sTCP:LISTEN", "-t"],
+            ["lsof", "-ti", f":{port}"],
+        ):
+            try:
+                out = subprocess.run(args, capture_output=True, text=True, timeout=12)
+                for x in out.stdout.split():
+                    if x.isdigit():
+                        pid = int(x)
+                        if pid > 0 and pid != mypid:
+                            pids.add(pid)
+                if pids:
+                    break
+            except (OSError, subprocess.TimeoutExpired, ValueError, FileNotFoundError):
+                pass
+    return pids
+
+
+def _kill_listen_pids(port: int) -> int:
+    """Terminate processes listening on TCP port. Returns how many kill signals were sent."""
+    pids = _listen_pids_on_port(port)
+    if not pids:
+        return 0
+    killed = 0
+    for pid in sorted(pids):
+        if sys.platform == "win32":
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/F"],
+                    capture_output=True,
+                    timeout=15,
+                )
+                killed += 1
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        else:
+            try:
+                os.kill(pid, 15)
+                killed += 1
+            except OSError:
+                pass
+    if killed and sys.platform != "win32":
+        time.sleep(0.4)
+        for pid in sorted(pids):
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
+    return killed
+
+
+def _resolve_port_pinned(preferred: int) -> tuple[int, bool]:
+    """Use exactly `preferred`: clear listeners, retry; never return preferred+1."""
+    rounds = 6
+    for attempt in range(rounds):
+        if not _port_busy(preferred):
+            return preferred, False
+        n = _kill_listen_pids(preferred)
+        if n:
+            print(
+                f"[photo-booth] Port {preferred} was in use — stopped {n} process(es). Retrying…",
+                file=sys.stderr,
+            )
+        elif attempt == 0:
+            print(
+                f"[photo-booth] Port {preferred} is blocked (in use or Windows cannot bind). "
+                f"Trying again after a short wait…",
+                file=sys.stderr,
+            )
+        time.sleep(0.8)
+        if not _port_busy(preferred):
+            return preferred, False
+
+    print(
+        f"\nCould not use port {preferred} after clearing listeners. "
+        f"Another app may be restarting on that port, or Windows excluded this port (WinError 10013).",
+        file=sys.stderr,
+    )
+    _print_listener_details(preferred)
+    print(
+        f"\nTry:  scripts/stop-photo-booth-standalone.*  then start again.\n"
+        f"Or use a different API_PORT in .env.standalone.\n"
+        f"Legacy auto-increment (8002, 8003…): set  PHOTOBOOTH_PORT_FALLBACK=1",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
 
 def _port_bind_failed_reason(port: int, e: OSError) -> str:
@@ -42,7 +188,7 @@ def _port_busy(port: int) -> bool:
     """
     True if we cannot listen on this port (in use, or bind forbidden).
     On Windows, WinError 10013 often means the port is in a reserved/excluded range
-    — treat as 'busy' so resolve-port can try 8002, 8003, … instead of crashing.
+    — treat as 'busy' (pinned mode retries; with PHOTOBOOTH_PORT_FALLBACK=1 the scan skips it).
     """
     global _win32_bind_denied_hint_shown
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -103,13 +249,21 @@ def _print_listener_details(port: int) -> None:
 
 def _print_kill_help(port: int) -> None:
     if sys.platform == "win32":
-        print(f"Port {port} is already in use.", file=sys.stderr)
+        print(f"Port {port} is already in use (or Windows is blocking bind on it).", file=sys.stderr)
         print("Try one of:", file=sys.stderr)
-        print(f'  1) Re-run without strict mode (default): we pick the next free port (8002, 8003, …).', file=sys.stderr)
-        print(f"  2) Stop the other program: netstat -ano | findstr \":{port}\"  then  taskkill /PID <pid> /F", file=sys.stderr)
-        print(f"  3) Use another port:  set API_PORT=8002", file=sys.stderr)
         print(
-            "  4) WinError 10013 (permission on bind): port may be in a Windows excluded range "
+            "  1) Start via scripts\\run-api-standalone.bat — by default it stops listeners on API_PORT "
+            "and keeps that port (no silent 8002+).",
+            file=sys.stderr,
+        )
+        print(f"  2) Stop the other program: netstat -ano | findstr \":{port}\"  then  taskkill /PID <pid> /F", file=sys.stderr)
+        print(f"  3) Use another fixed port:  set API_PORT=8010", file=sys.stderr)
+        print(
+            "  4) Legacy scan 8002, 8003…:  set PHOTOBOOTH_PORT_FALLBACK=1  (then update the phone URL).",
+            file=sys.stderr,
+        )
+        print(
+            "  5) WinError 10013 (permission on bind): port may be in a Windows excluded range "
             "(Hyper-V / WSL / Docker). Run:",
             file=sys.stderr,
         )
@@ -133,12 +287,20 @@ def _print_kill_help(port: int) -> None:
         except (OSError, subprocess.TimeoutExpired):
             pass
     else:
-        print(f"Port {port} is already in use.", file=sys.stderr)
+        print(f"Port {port} is already in use (or bind failed).", file=sys.stderr)
         print("Try one of:", file=sys.stderr)
-        print("  1) Re-run this script as usual — it will use the next free port (8002, 8003, …) automatically.", file=sys.stderr)
+        print(
+            "  1) Start via ./scripts/run-api-standalone.sh — by default it stops listeners on API_PORT "
+            "and keeps that port (no silent 8002+).",
+            file=sys.stderr,
+        )
         print(f"  2) Stop the other process:  kill $(lsof -tiTCP:{port} -sTCP:LISTEN)", file=sys.stderr)
         print("     If that does nothing, try:  kill -9 <pid>   (see PIDs below)", file=sys.stderr)
-        print(f"  3) Use another port:  API_PORT=8002 ./scripts/run-api-standalone.sh", file=sys.stderr)
+        print(f"  3) Use another fixed port:  API_PORT=8010 ./scripts/run-api-standalone.sh", file=sys.stderr)
+        print(
+            "  4) Legacy scan 8002, 8003…:  PHOTOBOOTH_PORT_FALLBACK=1  (then update the phone URL).",
+            file=sys.stderr,
+        )
         try:
             out = subprocess.run(
                 ["lsof", "-tiTCP", str(port), "-sTCP:LISTEN"],
@@ -156,9 +318,12 @@ def _print_kill_help(port: int) -> None:
 def _resolve_port(preferred: int, span: int = 25) -> tuple[int, bool]:
     """
     Returns (port, used_fallback).
-    If strict and preferred busy, raises SystemExit(1).
-    If non-strict, scans preferred .. preferred+span-1.
+    Default (no PHOTOBOOTH_PORT_FALLBACK): pin `preferred`, kill listeners, retry.
+    With PHOTOBOOTH_PORT_FALLBACK=1: legacy scan or strict single-port fail.
     """
+    if not _port_fallback_enabled():
+        return _resolve_port_pinned(preferred)
+
     if _strict_port():
         if _port_busy(preferred):
             _print_kill_help(preferred)
@@ -259,8 +424,8 @@ def main() -> int:
         port, fallback = _resolve_port(preferred, span)
         if fallback:
             print(
-                f"Note: port {preferred} was unavailable (in use or Windows blocked bind) — using {port} instead. "
-                f"(Phone URL must use :{port}. Strict fixed port: PHOTOBOOTH_STRICT_PORT=1.)",
+                f"Note: port {preferred} was unavailable — using {port} instead "
+                f"(PHOTOBOOTH_PORT_FALLBACK=1). Update PHOTOBOOTH_API_BASE on the phone.",
                 file=sys.stderr,
             )
         print(port)

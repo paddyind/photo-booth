@@ -7,12 +7,10 @@ REM
 REM  Set PHOTOBOOTH_PRINTER_NAME in .env.standalone — watcher starts automatically.
 REM  PHOTOBOOTH_ENABLE_PRINT_WATCHER=0 turns printing off without removing the name.
 REM
-REM  PORT (read this if you were stuck on 8001):
-REM    • First tries API_PORT (default 8001). If busy, uses 8002, 8003, …
-REM      automatically — you do NOT need to kill anything first.
-REM    • After start, copy the "LAN" URL for the phone; the :PORT must match.
-REM    • Strict "fail if 8001 busy":  set PHOTOBOOTH_STRICT_PORT=1
-REM    • Different start port:       set API_PORT=8010
+REM  PORT (default 8001 — matches typical mobile PHOTOBOOTH_API_BASE):
+REM    • Default: if API_PORT is busy, listeners on that port are cleared, then bind (no 8002+).
+REM    • Legacy 8002,8003… scan: set PHOTOBOOTH_PORT_FALLBACK=1 in .env.standalone
+REM    • Different port: set API_PORT=8010
 REM
 REM  Optional: copy .env.standalone.example to .env.standalone (see file for vars).
 REM  Long help: scripts\README-WINDOWS-STANDALONE.txt
@@ -41,8 +39,8 @@ echo      ^(stop everything for this folder, then start again^)
 echo.
 echo   TEST PHONE: use the LAN URL printed below + /health in the browser
 echo   MOBILE APK: stop/restart does NOT change this PC's Wi-Fi IP.
-echo   Pin port in .env.standalone: API_PORT=8001 and PHOTOBOOTH_STRICT_PORT=1
-echo   ^(then your baked PHOTOBOOTH_API_BASE stays valid^) — see .env.standalone.example
+echo   Default: server always uses API_PORT ^(8001^) — busy ports are cleared, not skipped.
+echo   Legacy 8002+ scan: set PHOTOBOOTH_PORT_FALLBACK=1 in .env.standalone
 echo   More help:  scripts\README-WINDOWS-STANDALONE.txt
 echo ============================================================
 echo.

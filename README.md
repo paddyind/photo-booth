@@ -62,7 +62,7 @@ API_PORT=8002 DATA_DIR="$PWD/data-alt" ./scripts/run-api-standalone.sh
 PHOTOBOOTH_PRINTER_NAME="EPSON L3250 Series" ./scripts/run-api-standalone.sh
 ```
 
-**Port already in use:** by default the script **does not stop** — it picks the **next free port** (8002, 8003, … up to 25 tries) and prints the real URL. Use that port in **`PHOTOBOOTH_API_BASE`** on the phone (e.g. `http://192.168.1.5:8002`). To **require** a fixed port and fail if busy: `PHOTOBOOTH_STRICT_PORT=1 ./scripts/run-api-standalone.sh`. To choose a base port yourself: `API_PORT=8010 ./scripts/run-api-standalone.sh`.
+**Port (default `API_PORT=8001`):** by default the standalone server **keeps that port** — it **stops processes listening on `API_PORT`**, then binds there (Windows and Mac/Linux), so **`PHOTOBOOTH_API_BASE`** can stay `http://<LAN>:8001` without rebuilding the app. **Legacy:** set **`PHOTOBOOTH_PORT_FALLBACK=1`** to scan 8002, 8003, … when busy (then update the phone URL). Choose another fixed port: `API_PORT=8010 ./scripts/run-api-standalone.sh`. With **`PHOTOBOOTH_PORT_FALLBACK=1`**, **`PHOTOBOOTH_STRICT_PORT=1`** still means “fail if `API_PORT` busy” instead of scanning.
 
 If you still need to free a port manually: **macOS/Linux** `lsof -nP -iTCP:8001` then `kill <pid>` (or `kill -9 <pid>`). **Windows** `netstat -ano | findstr :8001` then `taskkill /PID <pid> /F`.
 
@@ -79,16 +79,15 @@ If you still need to free a port manually: **macOS/Linux** `lsof -nP -iTCP:8001`
    ```bat
    scripts\run-api-standalone.bat
    ```
-3. When the server starts, copy the **`LAN:`** line (e.g. `http://192.168.1.50:8002`). Put that full URL into **`PHOTOBOOTH_API_BASE`** when you build/configure the mobile app. The phone must be on the **same Wi‑Fi** as the PC. **Do not use `127.0.0.1` on the phone** — that points at the phone itself.
+3. When the server starts, copy the **`LAN:`** line (usually `http://192.168.x.x:8001`). Put that full URL into **`PHOTOBOOTH_API_BASE`** when you build/configure the mobile app. The phone must be on the **same Wi‑Fi** as the PC. **Do not use `127.0.0.1` on the phone** — that points at the phone itself.
 
 **Non-technical operators:** open **`scripts/PHOTO-BOOTH-END-USER-START.txt`**. The start script also prints short instructions. If anything is stuck, run **`scripts\restart-photo-booth-standalone.bat`** (or **`stop`** then **`run`** again).
 
-**Port 8001 — you usually do not need to fix anything**
+**Port 8001 (default)**
 
-- The script tries **8001**, then **8002, 8003, …** automatically until a port is free. You **do not** have to run `taskkill` first.
-- If the window shows port **8002** (or higher), the phone URL **must use that port**.
-- **Require** port 8001 only (fail if busy): before running the script, `set PHOTOBOOTH_STRICT_PORT=1` (or add to `.env.standalone`).
-- **Pick a starting port:** `set API_PORT=8010` then `scripts\run-api-standalone.bat`.
+- **Default:** the server uses **`API_PORT` (8001)** and clears anything already listening on that port — no silent switch to 8002.
+- **Legacy 8002+:** set **`PHOTOBOOTH_PORT_FALLBACK=1`** in `.env.standalone` if you want the old scan behavior.
+- **Different fixed port:** `set API_PORT=8010` then `scripts\run-api-standalone.bat`.
 
 **If you still need to free a port manually (Windows)**
 
@@ -124,12 +123,12 @@ Other env vars: `set DATA_DIR=D:\pb-data`, `set PHOTOBOOTH_*` before `run-api-st
 
 No internet required; phones only need the same Wi‑Fi / hotspot as the computer.
 
-### Mobile APK: point at Docker **8000** vs standalone (**8001 or auto**)
+### Mobile APK: point at Docker **8000** vs standalone (**8001** by default)
 
 The app’s API URL is baked in at **`prepare-www`** / CI time (`PHOTOBOOTH_API_BASE`).
 
 - **Docker backend:** `http://<your-pc-LAN-ip>:8000`
-- **Standalone backend:** `http://<your-pc-LAN-ip>:<port>` — use the **port printed** when you start the standalone script (**8001** if free, otherwise **8002+** on Windows/Mac/Linux). Do not assume 8001 if the window shows another port.
+- **Standalone backend:** `http://<your-pc-LAN-ip>:8001` (or your **`API_PORT`**) — default behavior **pins** that port by clearing listeners. Only use **8002+** if you opted into **`PHOTOBOOTH_PORT_FALLBACK=1`** and the console shows a different port.
 
 Same GitHub **Run workflow** twice with different `api_base_url`, or locally:
 
@@ -142,12 +141,16 @@ PHOTOBOOTH_API_BASE=http://192.168.12.34:8001 npm run prepare-www && npx cap syn
 
 Install the matching APK for whichever server you started. **One APK** only talks to **one** base URL unless you add a future in-app setting.
 
-**Stop/restart and the APK:** Restarting the standalone server **does not** change the PC’s **LAN IP**, so you normally **do not** rebuild the app. The **port** can change if the server auto-picks 8002+ when 8001 is busy — to keep **`PHOTOBOOTH_API_BASE`** stable, set **`API_PORT`** and **`PHOTOBOOTH_STRICT_PORT=1`** in **`.env.standalone`** (see **`.env.standalone.example`**). If strict mode fails, run **`stop-photo-booth-standalone`** then start again.
+**Stop/restart and the APK:** Restarting does **not** change the PC’s **LAN IP**. By default the **port** stays **`API_PORT` (8001)** because the startup sequence **frees that port** instead of switching to 8002+. Rebuild the app only if you change **`API_PORT`** or enable **`PHOTOBOOTH_PORT_FALLBACK=1`** and get a different port.
+
+**Wrong IP typo:** If the phone shows **`ERR_ADDRESS_UNREACHABLE`**, check you did not type **`198.168.…`** — private LAN addresses almost always use **`192.168.…`** (192, not 198). Your server window shows the exact digits to copy.
+
+**Laptop hotspot:** The phone on the PC’s mobile hotspot is still “same LAN”; use the **LAN:** URL from the server window and the same firewall rule for the API port.
 
 **Phone cannot reach a Windows PC on port 8001 (or 8002+):**
 
 - The standalone script binds **`0.0.0.0`** — good for LAN. **`127.0.0.1` in `PHOTOBOOTH_API_BASE` on the phone is wrong** (that is the phone itself). Use the PC’s **Wi‑Fi IPv4** from the script’s **LAN:** line.
-- **Port must match** what the window prints (if 8001 was busy, use **8002** in the URL).
+- **Port** should match **`API_PORT`** (default **8001**) unless you use **`PHOTOBOOTH_PORT_FALLBACK=1`**.
 - **Windows Defender Firewall:** allow **inbound TCP** on that port for **Python** / **uvicorn** (or run *Windows Defender Firewall with Advanced Security* → Inbound Rules → New Rule → Port → TCP → the port → Allow). Quick test from another device: `curl http://<PC-LAN-IP>:<PORT>/health`.
 - **Same Wi‑Fi** (or hotspot with AP isolation off). **VPN** on the phone can block local LAN.
 

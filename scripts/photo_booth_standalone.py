@@ -99,38 +99,50 @@ def _print_startup_banner(port: int, lan: str) -> None:
         print("  LAN: (not auto-detected — use this PC's Wi-Fi IPv4 from Settings / ipconfig)", flush=True)
         base = f"http://<THIS_PC_LAN_IP>:{port}"
     print("", flush=True)
-    strict = (os.environ.get("PHOTOBOOTH_STRICT_PORT") or "").strip().lower() in ("1", "true", "yes", "on")
+    port_fallback = (os.environ.get("PHOTOBOOTH_PORT_FALLBACK") or "").strip().lower() in ("1", "true", "yes", "on")
     print(sep, flush=True)
     print("  MOBILE APP URL — stop/restart does NOT change this PC's Wi-Fi IP", flush=True)
     print(sep, flush=True)
     print("  • You do NOT need to rebuild the APK just because you stopped or restarted the server.", flush=True)
     print("  • The Wi-Fi IP (LAN line above) stays the same unless you change networks or DHCP gives a new one.", flush=True)
-    if strict:
+    if not port_fallback:
         print(
-            f"  • Port is PINNED (PHOTOBOOTH_STRICT_PORT=1) — PHOTOBOOTH_API_BASE should stay http://{lan or '<LAN-IP>'}:{port}",
+            f"  • Port is fixed to API_PORT ({port}) — anything listening here was cleared so PHOTOBOOTH_API_BASE can stay "
+            f"http://{lan or '<LAN-IP>'}:{port}",
             flush=True,
         )
     else:
         print(
-            "  • Port can change if this one was busy last time (8001→8002…). To match your APK forever, set in .env.standalone:",
+            "  • PHOTOBOOTH_PORT_FALLBACK=1 — if this port was busy, a higher port may have been chosen; update the app URL.",
             flush=True,
         )
-        print("      API_PORT=<same as your app>  and  PHOTOBOOTH_STRICT_PORT=1", flush=True)
-        print("    If start fails, run stop-photo-booth-standalone then start again (IP unchanged).", flush=True)
     print("", flush=True)
     print(sep, flush=True)
     print("  PHONE / TABLET — check connectivity (before relying on the app)", flush=True)
     print(sep, flush=True)
-    print("  1) Connect the phone to the SAME Wi-Fi as this computer.", flush=True)
+    print("  1) Phone must reach THIS computer: same Wi‑Fi OR connected to this PC’s mobile hotspot.", flush=True)
+    print("     (Hotspot counts as one LAN — use the LAN IP printed above, not the phone’s cellular data.)", flush=True)
     print("     Do not use 127.0.0.1 on the phone — that is the phone itself.", flush=True)
     if lan:
-        print("  2) On the phone, open Chrome/Safari and go to:", flush=True)
+        print("  2) On the phone, open Chrome/Safari and type the URL EXACTLY (copy from a photo if needed):", flush=True)
         print(f"        {base}/health", flush=True)
+        if lan.startswith("192.168."):
+            print(
+                "     TYPING TIP: addresses start with  192.168.  (digit 2 then 9 then 2).",
+                flush=True,
+            )
+            print(
+                "     If you type  198.168.…  you get ERR_ADDRESS_UNREACHABLE — that is the wrong number.",
+                flush=True,
+            )
     else:
         print("  2) On the phone browser, open:  http://<THIS_PC_LAN_IP>:%d/health" % port, flush=True)
     print('     Expected: JSON with "status":"ok" and "service":"photo-booth-api".', flush=True)
     print("  3) If the page does not load:", flush=True)
-    print("     • Confirm the URL uses the port shown above (8002 if 8001 was busy).", flush=True)
+    if port_fallback:
+        print("     • Confirm the URL uses the port shown above (it may not be 8001 if fallback picked another).", flush=True)
+    else:
+        print("     • Confirm the port matches API_PORT (default 8001) shown above.", flush=True)
     if sys.platform == "win32":
         print("     • Windows: allow inbound TCP on this port for Python (Firewall).", flush=True)
         print("       See scripts/README-WINDOWS-STANDALONE.txt or README (Windows).", flush=True)
