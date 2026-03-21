@@ -18,7 +18,7 @@ Consumer-friendly photo booth platform for phone/tablet capture, frame overlays,
 - `data`: Runtime storage when using **Docker** backend (host-mounted).
 - `data-standalone`: Optional runtime storage for **standalone** uvicorn (default; gitignored) when running beside Docker.
 - `scripts/`: **`run-api-standalone.sh`** / **`.bat`** — self-contained **Python 3.10+**, **`.venv`**, **`apps/api/requirements.txt`**, API on **`0.0.0.0`** (port **8001** or next free). Optional **`setup-standalone-venv.*`** = venv only. **Windows:** **`scripts/README-WINDOWS-STANDALONE.txt`** (plain-text cheat sheet).
-  - **Printer / folder watcher:** copy **`.env.standalone.example` → `.env.standalone`** (gitignored) and set **`PHOTOBOOTH_ENABLE_PRINT_WATCHER=1`** plus optional **`PHOTOBOOTH_PRINTER_NAME`**. The script installs watcher deps, starts **`print_watcher.py`** on the **same `DATA_DIR`**, and stops the watcher when you stop the API (**Mac/Linux**); **Windows** starts the watcher in the background (close the console or end the `PhotoBoothPrintWatcher` process if it keeps running). Discover names: **`scripts/list-printers.sh`** / **`list-printers.ps1`**.
+  - **Printer / folder watcher:** one run of **`run-api-standalone.sh`** / **`.bat`** starts the API and **`scripts/photo_booth_standalone.py`**, which starts **`print_watcher.py`** when **`PHOTOBOOTH_PRINTER_NAME`** is set in **`.env.standalone`** (no separate script). **`PHOTOBOOTH_ENABLE_PRINT_WATCHER=0`** turns printing off. Stopping the API (**Ctrl+C**) stops the watcher on **Mac, Linux, and Windows**. Optional **`PHOTOBOOTH_PRINT_WATCH_MODE=queue`** + **`PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE=1`** uses **`print-queue` → print → `print-archive`** (see **Print queue + archive**). Discover names: **`scripts/list-printers.sh`** / **`list-printers.ps1`**.
 - **`scripts/run-print-watcher.*`**: run the watcher **alone** (e.g. Docker host where the API is only in a container).
 
 ## Quick Start
@@ -53,13 +53,13 @@ cp .env.standalone.example .env.standalone   # optional: printer + watcher confi
 # Optional: ./scripts/setup-standalone-venv.sh  (same venv setup without starting the server)
 ```
 
-**`.env.standalone`** (optional): `PHOTOBOOTH_ENABLE_PRINT_WATCHER=1`, `PHOTOBOOTH_PRINTER_NAME="Exact Queue Name"`, optional `PHOTOBOOTH_DATA_DIR` (defaults to `DATA_DIR`). List CUPS printers: `./scripts/list-printers.sh`.
+**`.env.standalone`** (optional): set **`PHOTOBOOTH_PRINTER_NAME="Exact Queue Name"`** — the print watcher starts automatically. **`PHOTOBOOTH_ENABLE_PRINT_WATCHER=0`** disables it. Optional **`PHOTOBOOTH_DATA_DIR`** (defaults to `DATA_DIR`). List CUPS printers: `./scripts/list-printers.sh`.
 
 Optional overrides (shell env instead of file):
 
 ```bash
 API_PORT=8002 DATA_DIR="$PWD/data-alt" ./scripts/run-api-standalone.sh
-PHOTOBOOTH_ENABLE_PRINT_WATCHER=1 PHOTOBOOTH_PRINTER_NAME="EPSON L3250 Series" ./scripts/run-api-standalone.sh
+PHOTOBOOTH_PRINTER_NAME="EPSON L3250 Series" ./scripts/run-api-standalone.sh
 ```
 
 **Port already in use:** by default the script **does not stop** — it picks the **next free port** (8002, 8003, … up to 25 tries) and prints the real URL. Use that port in **`PHOTOBOOTH_API_BASE`** on the phone (e.g. `http://192.168.1.5:8002`). To **require** a fixed port and fail if busy: `PHOTOBOOTH_STRICT_PORT=1 ./scripts/run-api-standalone.sh`. To choose a base port yourself: `API_PORT=8010 ./scripts/run-api-standalone.sh`.
@@ -138,6 +138,15 @@ PHOTOBOOTH_API_BASE=http://192.168.12.34:8001 npm run prepare-www && npx cap syn
 
 Install the matching APK for whichever server you started. **One APK** only talks to **one** base URL unless you add a future in-app setting.
 
+**Phone cannot reach a Windows PC on port 8001 (or 8002+):**
+
+- The standalone script binds **`0.0.0.0`** — good for LAN. **`127.0.0.1` in `PHOTOBOOTH_API_BASE` on the phone is wrong** (that is the phone itself). Use the PC’s **Wi‑Fi IPv4** from the script’s **LAN:** line.
+- **Port must match** what the window prints (if 8001 was busy, use **8002** in the URL).
+- **Windows Defender Firewall:** allow **inbound TCP** on that port for **Python** / **uvicorn** (or run *Windows Defender Firewall with Advanced Security* → Inbound Rules → New Rule → Port → TCP → the port → Allow). Quick test from another device: `curl http://<PC-LAN-IP>:<PORT>/health`.
+- **Same Wi‑Fi** (or hotspot with AP isolation off). **VPN** on the phone can block local LAN.
+
+**Temporary in-app diagnostics:** rebuild with **`PHOTOBOOTH_CONNECTIVITY_DEBUG=1`** for `prepare-www` (or open the web UI with **`?connectivity=1`**). You get a visible **API connectivity** panel, **Ping /health**, auto re-check every 15s, and the debug log. Remove the flag once everything works.
+
 ## Notes
 
 - Printing is intentionally kept in `print-agent` to avoid printer driver issues in Linux containers.
@@ -179,7 +188,7 @@ The frame will then appear automatically in the frame dropdown after selecting t
   - **Rear mode** is locked to `4x6` + `portrait` + `story-memories` (if present). Output is **JPEG** only; **Prepare Final** is skipped — after capture the API composes the final automatically, then **auto-print** runs after the configured delay (default **10s**). Above the preview, **Capture again** retakes (cancels the timer); the banner shows **Printing in N s…** (or folder-print wording) until the timer elapses, then **Print opened** / **Sent to folder printer**. **Print Final** still opens immediately and cancels the countdown. Delay: inject **`PHOTOBOOTH_REAR_PRINT_DELAY_MS`** (ms).
   - **Front mode** keeps full interactive options (size/orientation/frame).
   - On laptops/desktops, camera mode is forced to front.
-- **Rear + physical printer (no double browser print):** run the host **`print_watcher`** (below) and build mobile with **`PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT=1`** so only the watcher prints; or rely on the browser print tab only (no watcher).
+- **Rear + physical printer (no double browser print):** run standalone (or **`print_watcher`**) and build mobile with **`PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT=1`**. The app shows **Printing now…** and polls **`GET /print/status`** so users see **printer errors** from the host (status file written by **`print_watcher`** under **`DATA_DIR`**). **Front-only booth printing:** add **`PHOTOBOOTH_HOST_PRINT_FEEDBACK=1`** to `prepare-www` so **Prepare Final** follows the same feedback without suppressing rear.
 - **Optional delay override (mobile bundle):** `PHOTOBOOTH_REAR_PRINT_DELAY_MS` (e.g. `15000`) via `prepare-www` / CI env.
 - File save behavior:
   - Original capture and final output use a **short basename**: sanitized **Name** (or `NO_NAME`) **+ timestamp** (`YYYYMMDD_HHMMSS`), e.g. `Jane_20260314_153045_original.jpg`, `Jane_20260314_153045_final.png`.
@@ -207,7 +216,7 @@ The frame will then appear automatically in the frame dropdown after selecting t
 
 The API writes finals under **`DATA_DIR/PhotoBooth_DDMMYYYY/finals/`** (or legacy **`DATA_DIR/finals/`**). A small Python process on the **host** (where the printer is installed) can print those files automatically — same workflow whether you use **Docker** or **standalone**, as long as **`PHOTOBOOTH_DATA_DIR`** points at the **host** folder that backs `DATA_DIR`.
 
-**Integrated with standalone:** enable **`PHOTOBOOTH_ENABLE_PRINT_WATCHER`** in **`.env.standalone`** (see above) so you do not need a second terminal.
+**Integrated with standalone:** **`run-api-standalone.*`** loads **`.env.standalone`** and runs **`photo_booth_standalone.py`** so the API and print watcher share one process group — no second terminal.
 
 **Docker-only API on the host:** install deps once (`pip install -r scripts/requirements-print-watcher.txt`; on Windows add **`pywin32`**), then run the watcher only (defaults to **`./data-standalone`**):
 
@@ -227,6 +236,22 @@ scripts\run-print-watcher.bat
 ```
 
 Optional: **`PHOTOBOOTH_PRINTER_NAME`** or **`--printer "Your Printer"`** (Windows: exact queue name; Mac/Linux: `lp -d` destination).
+
+### Print queue + archive (Mac / Windows)
+
+To **never print the same file twice**, use **queue mode**: the watcher watches only **`DATA_DIR/print-queue`** (override with **`PHOTOBOOTH_PRINT_QUEUE_DIR`**). When a printable file appears and finishes writing, it is **printed**, then **moved** to **`DATA_DIR/print-archive`** (**`PHOTOBOOTH_PRINT_ARCHIVE_DIR`**).
+
+1. In **`.env.standalone`**:  
+   - **`PHOTOBOOTH_PRINTER_NAME="…"`** (starts the watcher; or set **`PHOTOBOOTH_ENABLE_PRINT_WATCHER=1`** with no name to use the system default printer)  
+   - **`PHOTOBOOTH_PRINT_WATCH_MODE=queue`**  
+   - **`PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE=1`** — API copies each new final into `print-queue` after `/compose/final` (original final stays under `…/finals/` for URLs/downloads).  
+   - Optional: **`PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT=1`** on mobile so only the queue printer runs.
+
+2. Start **`run-api-standalone.sh`** / **`.bat`** as usual. Folders **`print-queue`** and **`print-archive`** are created under **`DATA_DIR`** as needed.
+
+3. **Manual testing:** drop a `.jpg` / `.png` / `.pdf` into `print-queue`; after print it should appear under `print-archive`.
+
+**Default mode** (**`PHOTOBOOTH_PRINT_WATCH_MODE=finals`** or unset) keeps the legacy behavior: recursive watch for **`**/finals/**`**, files are **not** moved after print.
 
 **Why not inside the container?** Linux containers do not see Windows/macOS printer drivers; the watcher must run on the OS that owns the printer.
 

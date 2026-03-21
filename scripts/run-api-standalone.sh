@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
-# Photo Booth API on the host (no Docker). Default port 8001 (Docker can use 8000).
-# Self-contained on macOS/Linux: finds Python 3.10+, creates .venv if needed, installs deps, runs uvicorn.
+# Photo Booth — one command: API + print watcher (when configured) in scripts/photo_booth_standalone.py.
+# Self-contained on macOS/Linux: finds Python 3.10+, creates .venv if needed, installs API deps, then starts everything.
 #
-# Optional printer setup (same process):
-#   Copy .env.standalone.example → .env.standalone and set:
-#     PHOTOBOOTH_ENABLE_PRINT_WATCHER=1
-#     PHOTOBOOTH_PRINTER_NAME="Your Printer"   # optional; default system printer
-#     PHOTOBOOTH_DATA_DIR=...                  # optional; defaults to DATA_DIR
-# Or export those variables before running this script.
-#
-# The folder watcher prints new files under **/finals/ (see scripts/print_watcher.py).
-# Windows (GDI): use scripts/run-api-standalone.bat + pywin32 for best results.
+# Copy .env.standalone.example → .env.standalone and set PHOTOBOOTH_PRINTER_NAME (exact queue name).
+# The print watcher starts automatically when a printer name is set; use PHOTOBOOTH_ENABLE_PRINT_WATCHER=0 to disable.
+# Queue mode: PHOTOBOOTH_PRINT_WATCH_MODE=queue and PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE=1 (see README).
+# Windows: scripts/run-api-standalone.bat (same behavior).
 #
 # Port: if API_PORT (default 8001) is busy, the next free port is used (8002, …) and printed clearly.
 # Require an exact port only: PHOTOBOOTH_STRICT_PORT=1 ./scripts/run-api-standalone.sh
@@ -52,19 +47,8 @@ PY="$(pick_python)" || {
 export PYTHONPATH="$ROOT"
 export DATA_DIR="${DATA_DIR:-$ROOT/data-standalone}"
 export FRAMES_DIR="${FRAMES_DIR:-$ROOT/shared/frames}"
-PORT="${API_PORT:-8001}"
+export API_PORT="${API_PORT:-8001}"
 export PHOTOBOOTH_DATA_DIR="${PHOTOBOOTH_DATA_DIR:-$DATA_DIR}"
-
-WATCHER_PID=""
-cleanup() {
-  if [[ -n "${WATCHER_PID:-}" ]] && kill -0 "$WATCHER_PID" 2>/dev/null; then
-    echo ""
-    echo "Stopping print watcher (pid $WATCHER_PID)…"
-    kill "$WATCHER_PID" 2>/dev/null || true
-    wait "$WATCHER_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup INT TERM EXIT
 
 if [[ ! -d "$ROOT/.venv" ]]; then
   echo "Creating .venv with $($PY --version 2>&1) …"
@@ -83,48 +67,7 @@ python -c "import uvicorn" 2>/dev/null || {
   exit 1
 }
 
-_enable="${PHOTOBOOTH_ENABLE_PRINT_WATCHER:-0}"
-case "$_enable" in
-  1 | true | yes | on | TRUE | YES | ON) _enable=1 ;;
-  *) _enable=0 ;;
-esac
-
-if [[ "$_enable" == "1" ]]; then
-  echo "Syncing print-watcher dependencies …"
-  python -m pip install -q -r "$ROOT/scripts/requirements-print-watcher.txt"
-  WATCH_ARGS=(--data-dir "$PHOTOBOOTH_DATA_DIR")
-  if [[ -n "${PHOTOBOOTH_PRINTER_NAME:-}" ]]; then
-    WATCH_ARGS+=(--printer "$PHOTOBOOTH_PRINTER_NAME")
-    echo "Print watcher: printer=${PHOTOBOOTH_PRINTER_NAME}"
-  else
-    echo "Print watcher: printer=(system default)"
-  fi
-  echo "Print watcher: PHOTOBOOTH_DATA_DIR=$PHOTOBOOTH_DATA_DIR"
-  python "$ROOT/scripts/print_watcher.py" "${WATCH_ARGS[@]}" &
-  WATCHER_PID=$!
-  echo "Print watcher started (pid $WATCHER_PID). Stop the API (Ctrl+C) to stop both."
-fi
-
 mkdir -p "$DATA_DIR"
 
-RESOLVED_PORT="$(python "$ROOT/scripts/standalone_preflight.py" resolve-port "$PORT")" || exit 1
-PORT="$RESOLVED_PORT"
-export API_PORT="$PORT"
-
-LAN_IP="$(python "$ROOT/scripts/standalone_preflight.py" lan-ip | tail -n 1)"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Local:   http://127.0.0.1:${PORT}"
-if [[ -n "$LAN_IP" ]]; then
-  echo "  LAN:     http://${LAN_IP}:${PORT}   ← use this for PHOTOBOOTH_API_BASE on the phone"
-else
-  echo "  LAN:     (not detected — try: ipconfig getifaddr en0  or  ip a)"
-  echo "           Same Wi‑Fi as this Mac; port ${PORT}"
-fi
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "DATA_DIR=$DATA_DIR"
-echo "FRAMES_DIR=$FRAMES_DIR"
-echo ""
-echo "Server running (Ctrl+C to stop). Build mobile with e.g. PHOTOBOOTH_API_BASE=http://${LAN_IP:-YOUR_LAN_IP}:${PORT}"
-echo ""
-python -m uvicorn apps.api.app.main:app --host 0.0.0.0 --port "$PORT"
+echo "Starting API (and print watcher if enabled in .env.standalone) …"
+exec python "$ROOT/scripts/photo_booth_standalone.py"

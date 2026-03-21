@@ -74,6 +74,21 @@ if (suppressRearBrowserPrint) {
   scriptTagParts.push(`window.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT=true;`);
 }
 
+const hasHostPrintFeedbackEnv = Object.prototype.hasOwnProperty.call(
+  process.env,
+  "PHOTOBOOTH_HOST_PRINT_FEEDBACK"
+);
+const hostPrintFeedbackOn =
+  hasHostPrintFeedbackEnv &&
+  ["1", "true", "yes", "y", "on"].includes(
+    String(process.env.PHOTOBOOTH_HOST_PRINT_FEEDBACK || "").toLowerCase()
+  );
+if (hasHostPrintFeedbackEnv) {
+  scriptTagParts.push(
+    `window.PHOTOBOOTH_HOST_PRINT_FEEDBACK=${hostPrintFeedbackOn ? "true" : "false"};`
+  );
+}
+
 const hasDebugEnv = Object.prototype.hasOwnProperty.call(process.env, "PHOTOBOOTH_DEBUG");
 const debugOn =
   hasDebugEnv &&
@@ -82,6 +97,21 @@ const debugOn =
   );
 if (hasDebugEnv) {
   scriptTagParts.push(`window.PHOTOBOOTH_DEBUG=${debugOn ? "true" : "false"};`);
+}
+
+const hasConnectivityDebugEnv = Object.prototype.hasOwnProperty.call(
+  process.env,
+  "PHOTOBOOTH_CONNECTIVITY_DEBUG"
+);
+const connectivityDebugOn =
+  hasConnectivityDebugEnv &&
+  ["1", "true", "yes", "y", "on"].includes(
+    String(process.env.PHOTOBOOTH_CONNECTIVITY_DEBUG || "").toLowerCase()
+  );
+if (hasConnectivityDebugEnv) {
+  scriptTagParts.push(
+    `window.PHOTOBOOTH_CONNECTIVITY_DEBUG=${connectivityDebugOn ? "true" : "false"};`
+  );
 }
 
 const hasShowCleanupEnv = Object.prototype.hasOwnProperty.call(
@@ -114,6 +144,7 @@ console.log(
   `Prepared mobile www at ${outIndex}` +
     `${apiBase.trim() ? ` (apiBase=${apiBase.trim()})` : ""}` +
     `${hasEnable8x11Env ? ` (enable8x11=${enable8x11 ? "true" : "false"})` : ""}` +
+    `${hasConnectivityDebugEnv ? ` (connectivityDebug=${connectivityDebugOn ? "true" : "false"})` : ""}` +
     ` (fsDirectory=${fsDirectory}, savePath=${savePath})`
 );
 

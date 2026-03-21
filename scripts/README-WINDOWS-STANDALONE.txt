@@ -19,6 +19,13 @@ PHONE URL RULES
   • Use the PC’s IPv4 address (shown as LAN), e.g. http://192.168.1.50:8002
   • Do NOT use 127.0.0.1 on the phone (that means “the phone itself”).
 
+WINDOWS FIREWALL (if the phone cannot connect but the PC browser can)
+  • Allow inbound TCP on the API port for Python (the process running uvicorn).
+  • Example (PowerShell as Administrator, port 8001 — change if your window shows another port):
+      New-NetFirewallRule -DisplayName "Photo Booth API 8001" -Direction Inbound -Protocol TCP -LocalPort 8001 -Action Allow
+  • Or: Windows Security → Firewall → Advanced settings → Inbound Rules → New Rule → Port → TCP → 8001 → Allow.
+  • Test from another machine:  curl http://YOUR-PC-IP:8001/health
+
 OPTIONAL: FORCE EXACT PORT OR FAIL
   • set PHOTOBOOTH_STRICT_PORT=1
   • scripts\run-api-standalone.bat

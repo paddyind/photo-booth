@@ -1,8 +1,11 @@
 @echo off
 setlocal EnableExtensions
 REM ========================================================================
-REM  Photo Booth — Standalone API (Windows). No Docker required.
+REM  Photo Booth — one command: API + print watcher (when .env has printer name).
 REM  Run from repo root:  scripts\run-api-standalone.bat
+REM
+REM  Set PHOTOBOOTH_PRINTER_NAME in .env.standalone — watcher starts automatically.
+REM  PHOTOBOOTH_ENABLE_PRINT_WATCHER=0 turns printing off without removing the name.
 REM
 REM  PORT (read this if you were stuck on 8001):
 REM    • First tries API_PORT (default 8001). If busy, uses 8002, 8003, …
@@ -69,64 +72,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-set "_PW=0"
-if /i "%PHOTOBOOTH_ENABLE_PRINT_WATCHER%"=="1" set "_PW=1"
-if /i "%PHOTOBOOTH_ENABLE_PRINT_WATCHER%"=="true" set "_PW=1"
-if /i "%PHOTOBOOTH_ENABLE_PRINT_WATCHER%"=="yes" set "_PW=1"
-if /i "%PHOTOBOOTH_ENABLE_PRINT_WATCHER%"=="on" set "_PW=1"
-
-if "%_PW%"=="1" (
-  echo Syncing print-watcher dependencies …
-  python -m pip install -q -r scripts\requirements-print-watcher.txt
-  python -m pip install -q pywin32 2>nul
-  if defined PHOTOBOOTH_PRINTER_NAME (
-    echo Print watcher: printer=%PHOTOBOOTH_PRINTER_NAME%
-    echo Print watcher: PHOTOBOOTH_DATA_DIR=%PHOTOBOOTH_DATA_DIR%
-    start "PhotoBoothPrintWatcher" /B python "%CD%\scripts\print_watcher.py" --data-dir "%PHOTOBOOTH_DATA_DIR%" --printer "%PHOTOBOOTH_PRINTER_NAME%"
-  ) else (
-    echo Print watcher: printer=^(system default^)
-    echo Print watcher: PHOTOBOOTH_DATA_DIR=%PHOTOBOOTH_DATA_DIR%
-    start "PhotoBoothPrintWatcher" /B python "%CD%\scripts\print_watcher.py" --data-dir "%PHOTOBOOTH_DATA_DIR%"
-  )
-  echo Print watcher started in background ^(same DATA_DIR as API^). Close this window to stop the API; you may need to end the watcher task manually if it stays running.
-)
-
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
 
-set "TEMP_API_PORT="
-for /f "delims=" %%p in ('python "%~dp0standalone_preflight.py" resolve-port %API_PORT%') do set "TEMP_API_PORT=%%p"
-if not defined TEMP_API_PORT (
-  echo Could not find a free port. Try: set API_PORT=8010
-  exit /b 1
-)
-set "API_PORT=%TEMP_API_PORT%"
-
-echo.
-echo ----------------------------------------------------------------
-echo   Port: %API_PORT%  ^(if not 8001, your phone app must use this port^)
-echo   You do not need to free 8001 first — this script picks a free port.
-echo ----------------------------------------------------------------
-
-set "LAN_IP="
-for /f "delims=" %%i in ('python "%~dp0standalone_preflight.py" lan-ip') do set "LAN_IP=%%i"
-
-echo.
-echo ============================================================
-echo   Local:   http://127.0.0.1:%API_PORT%
-if defined LAN_IP (
-  echo   LAN:     http://%LAN_IP%:%API_PORT%   ^<- use for PHOTOBOOTH_API_BASE on the phone
-) else (
-  echo   LAN:     ^(not detected — run ipconfig and use your IPv4^)
-)
-echo ============================================================
-echo DATA_DIR=%DATA_DIR%
-echo FRAMES_DIR=%FRAMES_DIR%
-echo.
-if defined LAN_IP (
-  echo Server running ^(Ctrl+C to stop^). Mobile: PHOTOBOOTH_API_BASE=http://%LAN_IP%:%API_PORT%
-) else (
-  echo Server running ^(Ctrl+C to stop^). Set PHOTOBOOTH_API_BASE to http://YOUR_IPV4:%API_PORT%
-)
-echo.
-python -m uvicorn apps.api.app.main:app --host 0.0.0.0 --port %API_PORT%
-endlocal
+echo Starting API ^(and print watcher if enabled in .env.standalone^) …
+python "%~dp0photo_booth_standalone.py"
+exit /b %ERRORLEVEL%

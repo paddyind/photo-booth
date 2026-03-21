@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Watch DATA_DIR for new **/finals/** files and print (same folder layout as Docker or standalone).
+# Watch DATA_DIR for new **/finals/** files (default) or print-queue (queue mode). See print_watcher.py --help.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

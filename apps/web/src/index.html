@@ -15,6 +15,20 @@
       .muted { color: #bbb; font-size: 14px; }
       .status { margin-top: 8px; font-size: 14px; color: #9ad; }
       .status.error { color: #ff8f8f; }
+      .status.printing {
+        color: #b8f5b8;
+        font-weight: 600;
+        animation: printPulse 1.2s ease-in-out infinite;
+      }
+      @keyframes printPulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.72;
+        }
+      }
       a { color: #7ad0ff; }
       .pill { background: #2a2a2a; border-radius: 999px; padding: 6px 10px; font-size: 13px; color: #ddd; }
       .primary { background: #00c2ff; color: #031018; font-weight: 700; }
@@ -149,6 +163,25 @@
           <button id="cleanupBtn" class="secondary" type="button">Clean saved files</button>
         </div>
         <div id="status" class="status">Loading…</div>
+        <div
+          id="connectivityDebugPanel"
+          hidden
+          style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#1a1a2e;color:#eee;font-size:13px;line-height:1.45;"
+        >
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;">
+            <strong>API connectivity (debug)</strong>
+            <button type="button" id="connectivityPingBtn" class="secondary" style="font-size:12px;">Ping /health</button>
+          </div>
+          <div class="muted" style="color:#b8c5d6;">
+            Base URL: <code id="connectivityApiBase" style="color:#fff;word-break:break-all;"></code>
+          </div>
+          <div id="connectivityHealthLine" style="margin-top:6px;"></div>
+          <p class="muted" style="margin:8px 0 0;font-size:12px;color:#8a9faf;">
+            Use your PC’s <strong>LAN IPv4</strong> in <code>PHOTOBOOTH_API_BASE</code> (not <code>127.0.0.1</code>). Match the
+            <strong>port</strong> shown when the API starts (8002 if 8001 was busy). Same Wi‑Fi as the phone.
+            <strong>Windows:</strong> allow inbound TCP on that port for Python (see README / scripts README).
+          </p>
+        </div>
         <details id="debugPanel" class="muted" style="margin-top:8px;" hidden>
           <summary>Debug logs</summary>
           <pre id="debugLog" style="white-space:pre-wrap;max-height:160px;overflow:auto;"></pre>
@@ -194,6 +227,13 @@
         window.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT === "true" ||
         window.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT === 1 ||
         window.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT === "1";
+      /** Poll /print/status after finals when host print_watcher runs (rear suppress implies true). */
+      const HOST_PRINT_FEEDBACK =
+        SUPPRESS_REAR_BROWSER_PRINT ||
+        window.PHOTOBOOTH_HOST_PRINT_FEEDBACK === true ||
+        window.PHOTOBOOTH_HOST_PRINT_FEEDBACK === "true" ||
+        window.PHOTOBOOTH_HOST_PRINT_FEEDBACK === 1 ||
+        window.PHOTOBOOTH_HOST_PRINT_FEEDBACK === "1";
       /**
        * Verbose logging + debug panel. Enable with ?debug=1, #debug, or window.PHOTOBOOTH_DEBUG (prepare-www / console).
        */
@@ -204,6 +244,13 @@
         window.PHOTOBOOTH_DEBUG === "1" ||
         (typeof location !== "undefined" &&
           (/(?:^|[?&#])debug=1(?:&|$)/.test(location.search) || /#debug\b/.test(location.hash)));
+      /** Mobile: inject PHOTOBOOTH_CONNECTIVITY_DEBUG=1 in prepare-www, or add ?connectivity=1 to the URL. */
+      const CONNECTIVITY_DEBUG =
+        window.PHOTOBOOTH_CONNECTIVITY_DEBUG === true ||
+        window.PHOTOBOOTH_CONNECTIVITY_DEBUG === "true" ||
+        window.PHOTOBOOTH_CONNECTIVITY_DEBUG === 1 ||
+        window.PHOTOBOOTH_CONNECTIVITY_DEBUG === "1" ||
+        (typeof location !== "undefined" && /(?:^|[?&#])connectivity=1(?:&|$)/.test(location.search));
       /** Allow “Clean saved files” (enable with PHOTOBOOTH_SHOW_CLEANUP or debug). Button stays visible; disabled when off. */
       const SHOW_CLEANUP =
         DEBUG_MODE ||
@@ -281,8 +328,16 @@
       const debugPanel = document.getElementById("debugPanel");
 
       function applyProductionChrome() {
-        // Debug logs: completely hidden unless debug mode — keeps the UI clean.
-        if (DEBUG_MODE) {
+        const connPanel = document.getElementById("connectivityDebugPanel");
+        const baseEl = document.getElementById("connectivityApiBase");
+        if (CONNECTIVITY_DEBUG) {
+          connPanel?.removeAttribute("hidden");
+          if (baseEl) baseEl.textContent = API_BASE;
+        } else {
+          connPanel?.setAttribute("hidden", "");
+        }
+        // Debug logs: hidden unless full debug or connectivity debug (LAN troubleshooting).
+        if (DEBUG_MODE || CONNECTIVITY_DEBUG) {
           debugPanel?.removeAttribute("hidden");
         } else {
           debugPanel?.setAttribute("hidden", "");
@@ -351,14 +406,14 @@
         if (rearCountdownSecondsLeft != null && rearCountdownSecondsLeft > 0) {
           rearPrintCountdown.classList.remove("idle");
           if (SUPPRESS_REAR_BROWSER_PRINT) {
-            rearPrintCountdown.textContent = `Folder print in ${rearCountdownSecondsLeft} s…`;
+            rearPrintCountdown.textContent = `Booth print in ${rearCountdownSecondsLeft} s…`;
           } else {
             rearPrintCountdown.textContent = `Printing in ${rearCountdownSecondsLeft} s…`;
           }
         } else if (rearCountdownSecondsLeft === 0) {
           rearPrintCountdown.classList.remove("idle");
           rearPrintCountdown.textContent = SUPPRESS_REAR_BROWSER_PRINT
-            ? "Sending to printer…"
+            ? "Printing now…"
             : "Opening print…";
         } else {
           rearPrintCountdown.classList.add("idle");
@@ -385,21 +440,17 @@
           const left = rearCountdownSecondsLeft;
           if (left == null) return;
           if (left <= 0) {
-            setStatus(
-              DEBUG_MODE
-                ? SUPPRESS_REAR_BROWSER_PRINT
-                  ? "Rear: sending to folder printer…"
-                  : "Rear: opening print…"
-                : SUPPRESS_REAR_BROWSER_PRINT
-                  ? "Sending to printer…"
-                  : "Opening print…"
-            );
+            if (SUPPRESS_REAR_BROWSER_PRINT) {
+              setStatus(DEBUG_MODE ? "Rear: printing now (booth printer)…" : "Printing now…", false, "printing");
+            } else {
+              setStatus(DEBUG_MODE ? "Rear: opening print…" : "Opening print…");
+            }
             return;
           }
           if (DEBUG_MODE) {
             if (SUPPRESS_REAR_BROWSER_PRINT) {
               setStatus(
-                `Rear: folder print in ${left} s (${rearPrintDelayLabel()} total). Capture again above preview to cancel.`
+                `Rear: printing in ${left} s (${rearPrintDelayLabel()} total) — booth printer. Capture again to cancel.`
               );
             } else {
               setStatus(
@@ -409,7 +460,7 @@
           } else {
             setStatus(
               SUPPRESS_REAR_BROWSER_PRINT
-                ? `Printer in ${left} s — Capture again to cancel`
+                ? `Booth print in ${left} s — Capture again to cancel`
                 : `Printing in ${left} s — Capture again or Print now`
             );
           }
@@ -428,29 +479,135 @@
         rearAutoPrintTimer = setTimeout(() => {
           clearRearAutoPrintSchedule();
           if (!isRearMode() || !currentFinalUrl) return;
+          const expectedBase = finalBasenameFromUrl(currentFinalUrl);
           if (!SUPPRESS_REAR_BROWSER_PRINT) {
+            setStatus(DEBUG_MODE ? "Rear: opening print dialog…" : "Printing now — use the print dialog.", false, "printing");
             window.open(currentFinalUrl, "_blank", "noopener");
-            setStatus(DEBUG_MODE ? "Rear: print dialog opened." : "Print opened.");
+            setStatus(DEBUG_MODE ? "Rear: print dialog opened." : "Print dialog opened.");
           } else {
-            setStatus(
-              DEBUG_MODE
-                ? "Rear: final on server — print_watcher will print."
-                : "Sent to printer folder."
-            );
+            setStatus(DEBUG_MODE ? "Rear: printing now (booth)…" : "Printing now…", false, "printing");
+            if (rearPrintCountdown) {
+              rearPrintCountdown.classList.remove("idle");
+              rearPrintCountdown.textContent = "Printing now…";
+            }
+            void pollHostPrintForJob(expectedBase, { label: "rear-auto" });
           }
           if (rearPrintCountdown && isRearMode() && previewCard.style.display !== "none" && currentImageId) {
-            rearPrintCountdown.classList.add("idle");
-            rearPrintCountdown.textContent = SUPPRESS_REAR_BROWSER_PRINT
-              ? "Sent to folder printer — Capture again for another."
-              : "Print opened — Capture again for another.";
+            if (!SUPPRESS_REAR_BROWSER_PRINT) {
+              rearPrintCountdown.classList.add("idle");
+              rearPrintCountdown.textContent = "Print opened — Capture again for another.";
+            }
             rearPreviewToolbar.classList.add("visible");
           }
         }, REAR_AUTO_PRINT_DELAY_MS);
       }
 
-      function setStatus(message, isError = false) {
+      function setStatus(message, isError = false, kind = "normal") {
         statusEl.textContent = message;
-        statusEl.className = isError ? "status error" : "status";
+        statusEl.className = "status";
+        if (isError) statusEl.classList.add("error");
+        else if (kind === "printing") statusEl.classList.add("printing");
+      }
+
+      function finalBasenameFromUrl(url) {
+        try {
+          const noQuery = String(url).split("?")[0];
+          const parts = noQuery.split("/").filter(Boolean);
+          return parts.pop() || "";
+        } catch (_e) {
+          return "";
+        }
+      }
+
+      function printStatusMatchesFile(data, expectedBasename) {
+        if (!expectedBasename) return true;
+        if (!data || !data.file) return true;
+        return data.file === expectedBasename;
+      }
+
+      async function fetchPrintStatusRaw() {
+        try {
+          const res = await fetch(`${API_BASE}/print/status`, { mode: "cors" });
+          if (!res.ok) return null;
+          return await res.json();
+        } catch (_e) {
+          return null;
+        }
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      /**
+       * Follow host print_watcher status for this final (matches filename from final URL).
+       */
+      async function pollHostPrintForJob(expectedBasename, opts = {}) {
+        const maxMs = 55000;
+        const step = 450;
+        const t0 = Date.now();
+        let sawPrinting = false;
+        const label = opts.label || "print";
+        logDebug(`pollHostPrint start (${label})`, { expectedBasename });
+
+        while (Date.now() - t0 < maxMs) {
+          const data = await fetchPrintStatusRaw();
+          if (data && data.state && data.state !== "idle") {
+            const match = printStatusMatchesFile(data, expectedBasename);
+            if (
+              !match &&
+              (data.state === "success" || data.state === "error" || data.state === "skipped")
+            ) {
+              await sleep(step);
+              continue;
+            }
+            if (data.state === "printing" && match) {
+              sawPrinting = true;
+              setStatus(data.message || "Printing now…", false, "printing");
+              if (rearPrintCountdown && isRearMode() && previewCard.style.display !== "none") {
+                rearPrintCountdown.classList.remove("idle");
+                rearPrintCountdown.textContent = "Printing now…";
+              }
+            }
+            if (data.state === "success" && match) {
+              setStatus(data.message || "Print finished.", false, "normal");
+              if (rearPrintCountdown && isRearMode() && previewCard.style.display !== "none" && currentImageId) {
+                rearPrintCountdown.classList.add("idle");
+                rearPrintCountdown.textContent = "Printed — Capture again for another.";
+              }
+              logDebug(`pollHostPrint success (${label})`, data);
+              return;
+            }
+            if (data.state === "error" && match) {
+              setStatus(data.message || "Printer error — check the booth computer.", true);
+              if (rearPrintCountdown && isRearMode() && previewCard.style.display !== "none") {
+                rearPrintCountdown.classList.add("idle");
+                rearPrintCountdown.textContent = "Print failed — see message above.";
+              }
+              logDebug(`pollHostPrint error (${label})`, data);
+              return;
+            }
+            if (data.state === "skipped" && match) {
+              setStatus(data.message || "Print was skipped.", true);
+              if (rearPrintCountdown && isRearMode() && previewCard.style.display !== "none") {
+                rearPrintCountdown.classList.add("idle");
+                rearPrintCountdown.textContent = "Print skipped — try again.";
+              }
+              logDebug(`pollHostPrint skipped (${label})`, data);
+              return;
+            }
+          }
+          await sleep(step);
+        }
+        const timeoutMsg = sawPrinting
+          ? "Print is taking longer than expected — check the booth computer and printer."
+          : "No printer update — is the booth app running with a printer configured?";
+        setStatus(timeoutMsg, true);
+        if (rearPrintCountdown && isRearMode() && previewCard.style.display !== "none") {
+          rearPrintCountdown.classList.add("idle");
+          rearPrintCountdown.textContent = "Print status unknown — check booth PC.";
+        }
+        logDebug(`pollHostPrint timeout (${label})`, { sawPrinting, expectedBasename });
       }
 
       function logDebug(message, meta = null) {
@@ -498,19 +655,45 @@
         }
       }
 
+      function renderConnectivityHealth(ok, detail, ms) {
+        if (!CONNECTIVITY_DEBUG) return;
+        const el = document.getElementById("connectivityHealthLine");
+        if (!el) return;
+        const t = new Date().toLocaleTimeString();
+        const msPart = typeof ms === "number" && ms >= 0 ? ` (${ms}ms)` : "";
+        if (ok) {
+          el.textContent = `Last /health: OK at ${t}${msPart} — ${detail}`;
+          el.style.color = "#7bed9f";
+        } else {
+          el.textContent = `Last /health: FAILED at ${t} — ${detail}`;
+          el.style.color = "#ff6b6b";
+        }
+      }
+
       async function checkApiHealth() {
+        const started = Date.now();
         try {
           const res = await apiFetch(`${API_BASE}/health`, {}, "health");
+          const ms = Date.now() - started;
           if (!res.ok) {
             const body = await readErrorBody(res);
             logDebug("Health check returned non-OK", { status: res.status, body });
+            renderConnectivityHealth(false, `HTTP ${res.status} ${body || res.statusText}`, ms);
             return false;
           }
           const data = await res.json();
           logDebug("Health check OK", data);
+          let detail = "ok";
+          try {
+            detail = JSON.stringify(data);
+          } catch (_e) {
+            detail = String(data);
+          }
+          renderConnectivityHealth(true, detail, ms);
           return true;
         } catch (e) {
           logDebug("Health check error", { message: e.message });
+          renderConnectivityHealth(false, e.message || "Network / CORS error", Date.now() - started);
           return false;
         }
       }
@@ -1074,6 +1257,13 @@
 
         // Ensure print is available for this freshly prepared final.
         printBtn.style.display = "";
+
+        // Front camera + host print_watcher: show Printing now… and surface errors from /print/status.
+        if (!isRearMode() && HOST_PRINT_FEEDBACK) {
+          const hint = finalBasenameFromUrl(href);
+          setStatus("Printing now…", false, "printing");
+          void pollHostPrintForJob(hint, { label: "front-final" });
+        }
       }
 
       captureBtn.addEventListener("click", async () => {
@@ -1111,6 +1301,13 @@
         }
         clearRearAutoPrintSchedule();
         syncRearPreviewToolbar();
+        const expectedBase = finalBasenameFromUrl(currentFinalUrl);
+        if (HOST_PRINT_FEEDBACK) {
+          setStatus("Printing now…", false, "printing");
+          void pollHostPrintForJob(expectedBase, { label: "print-btn" });
+          return;
+        }
+        setStatus(DEBUG_MODE ? "Opening print dialog…" : "Printing now — use the print dialog.", false, "printing");
         window.open(currentFinalUrl, "_blank", "noopener");
         setStatus(DEBUG_MODE ? "Opened final file. Use the print dialog." : "Print dialog opened.");
       });
@@ -1193,6 +1390,7 @@
         }
         logDebug("App init", {
           apiBase: API_BASE,
+          connectivityDebug: CONNECTIVITY_DEBUG,
           enable8x11: ENABLE_8X11,
           rearAutoPrintDelayMs: REAR_AUTO_PRINT_DELAY_MS,
           suppressRearBrowserPrint: SUPPRESS_REAR_BROWSER_PRINT,
@@ -1206,6 +1404,20 @@
               ? `Phone: /storage/emulated/0/${SAVE_PATH}/`
               : "Set EXTERNAL_STORAGE + Download for a public save folder.",
         });
+        if (CONNECTIVITY_DEBUG) {
+          const pingBtn = document.getElementById("connectivityPingBtn");
+          pingBtn?.addEventListener("click", async () => {
+            pingBtn.disabled = true;
+            try {
+              await checkApiHealth();
+            } finally {
+              pingBtn.disabled = false;
+            }
+          });
+          setInterval(() => {
+            checkApiHealth().catch(() => {});
+          }, 15000);
+        }
         try {
           if (serverOk) {
             await loadOptions();

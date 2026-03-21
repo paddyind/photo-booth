@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
@@ -40,6 +42,11 @@ JOBS: dict[str, dict] = {}
 
 _FILENAME_SAFE_RE = re.compile(r"[^a-zA-Z0-9_-]+")
 COMPOSE_CACHE_VERSION = "fit3"
+
+
+def _env_truthy(name: str) -> bool:
+    v = (os.getenv(name) or "").strip().lower()
+    return v in ("1", "true", "yes", "on", "y")
 
 
 def _safe_filename_component(value: str) -> str:
@@ -169,6 +176,33 @@ def _now_iso() -> str:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "photo-booth-api"}
+
+
+PRINT_STATUS_FILENAME = ".photobooth-print-status.json"
+
+
+@app.get("/print/status")
+def print_status() -> dict:
+    """
+    Latest host print_watcher state (written under DATA_DIR).
+    Used by the web UI for 'Printing now…' and printer error visibility.
+    """
+    path = DATA_DIR / PRINT_STATUS_FILENAME
+    if not path.is_file():
+        return {"state": "idle", "message": None, "file": None, "updated_at_ms": None}
+    try:
+        raw = path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+        return {
+            "state": data.get("state", "idle"),
+            "message": data.get("message"),
+            "file": data.get("file"),
+            "updated_at_ms": data.get("updated_at_ms"),
+        }
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"state": "idle", "message": None, "file": None, "updated_at_ms": None}
 
 
 @app.get("/frames")
@@ -397,6 +431,13 @@ def compose_final(payload: FinalCreate) -> dict:
             fp.unlink(missing_ok=True)
         legacy_preview = PREVIEWS_DIR / f"{payload.image_id}.jpg"
         legacy_preview.unlink(missing_ok=True)
+
+    # Optional: drop a copy into print-queue for folder-based auto-print (see scripts/print_watcher.py queue mode).
+    if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE"):
+        qdir = Path(os.getenv("PHOTOBOOTH_PRINT_QUEUE_DIR", str(DATA_DIR / "print-queue"))).expanduser().resolve()
+        qdir.mkdir(parents=True, exist_ok=True)
+        dest = qdir / f"{final_path.stem}_{uuid4().hex[:8]}{final_path.suffix}"
+        shutil.copy2(final_path, dest)
 
     final_url = (
         f"/finals/{session_folder}/{final_path.name}"
