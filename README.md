@@ -17,7 +17,7 @@ Consumer-friendly photo booth platform for phone/tablet capture, frame overlays,
 - `shared/frames`: Frame packs and metadata (`meta.json`) by print size.
 - `data`: Runtime storage when using **Docker** backend (host-mounted).
 - `data-standalone`: Optional runtime storage for **standalone** uvicorn (default; gitignored) when running beside Docker.
-- `scripts/`: **`run-api-standalone.sh`** / **`.bat`** — self-contained **Python 3.10+**, **`.venv`**, **`apps/api/requirements.txt`**, API on **`0.0.0.0:8001`**. Optional **`setup-standalone-venv.*`** = venv only.
+- `scripts/`: **`run-api-standalone.sh`** / **`.bat`** — self-contained **Python 3.10+**, **`.venv`**, **`apps/api/requirements.txt`**, API on **`0.0.0.0`** (port **8001** or next free). Optional **`setup-standalone-venv.*`** = venv only. **Windows:** **`scripts/README-WINDOWS-STANDALONE.txt`** (plain-text cheat sheet).
   - **Printer / folder watcher:** copy **`.env.standalone.example` → `.env.standalone`** (gitignored) and set **`PHOTOBOOTH_ENABLE_PRINT_WATCHER=1`** plus optional **`PHOTOBOOTH_PRINTER_NAME`**. The script installs watcher deps, starts **`print_watcher.py`** on the **same `DATA_DIR`**, and stops the watcher when you stop the API (**Mac/Linux**); **Windows** starts the watcher in the background (close the console or end the `PhotoBoothPrintWatcher` process if it keeps running). Discover names: **`scripts/list-printers.sh`** / **`list-printers.ps1`**.
 - **`scripts/run-print-watcher.*`**: run the watcher **alone** (e.g. Docker host where the API is only in a container).
 
@@ -31,7 +31,7 @@ Consumer-friendly photo booth platform for phone/tablet capture, frame overlays,
    - Web UI: `http://localhost:3000`
    - API: `http://localhost:8000/docs`
 
-**Web UI (default):** debug logging and the **Debug logs** panel are **off**; **Clean saved files** is hidden in the browser (it only applies to native app storage — enable with `PHOTOBOOTH_SHOW_CLEANUP=1` in `prepare-www` for mobile). Developers: add **`?debug=1`** to the page URL (or `#debug`) or set **`window.PHOTOBOOTH_DEBUG=true`** before load to show logs + console detail. **Standalone (Mac/Windows):** run **`./scripts/run-api-standalone.sh`** or **`scripts\run-api-standalone.bat`**, open the web app pointed at **`http://<this-pc>:8001`** (or use Docker web + API on 8000).
+**Web UI (default):** the **Debug logs** block is **fully hidden** (clean layout). Other controls stay **visible**; **Clean saved files** is **disabled** until you opt in with **`PHOTOBOOTH_SHOW_CLEANUP=1`** in `prepare-www` (mobile) or **`?debug=1`**. Developers: **`?debug=1`** or **`#debug`** shows the debug panel and verbose logging. **Standalone (Mac/Windows):** **`./scripts/run-api-standalone.sh`** / **`.bat`**, web app → **`http://<this-pc>:8001`** (or Docker on 8000).
 
 ## API: Docker (port 8000) + standalone (port 8001) on one machine
 
@@ -62,18 +62,53 @@ API_PORT=8002 DATA_DIR="$PWD/data-alt" ./scripts/run-api-standalone.sh
 PHOTOBOOTH_ENABLE_PRINT_WATCHER=1 PHOTOBOOTH_PRINTER_NAME="EPSON L3250 Series" ./scripts/run-api-standalone.sh
 ```
 
-### Windows (cmd)
+**Port already in use:** by default the script **does not stop** — it picks the **next free port** (8002, 8003, … up to 25 tries) and prints the real URL. Use that port in **`PHOTOBOOTH_API_BASE`** on the phone (e.g. `http://192.168.1.5:8002`). To **require** a fixed port and fail if busy: `PHOTOBOOTH_STRICT_PORT=1 ./scripts/run-api-standalone.sh`. To choose a base port yourself: `API_PORT=8010 ./scripts/run-api-standalone.sh`.
+
+If you still need to free a port manually: **macOS/Linux** `lsof -nP -iTCP:8001` then `kill <pid>` (or `kill -9 <pid>`). **Windows** `netstat -ano | findstr :8001` then `taskkill /PID <pid> /F`.
+
+**LAN IP for mobile:** the script prints **`http://<lan-ip>:<port>`** at startup. In another terminal: `python scripts/standalone_preflight.py lan-ip`.
+
+### Windows (Command Prompt or PowerShell)
+
+**Quick run**
+
+1. `cd` into the `photo-booth` folder (the one that contains `apps` and `scripts`).
+2. Run:
+   ```bat
+   scripts\run-api-standalone.bat
+   ```
+3. When the server starts, copy the **`LAN:`** line (e.g. `http://192.168.1.50:8002`). Put that full URL into **`PHOTOBOOTH_API_BASE`** when you build/configure the mobile app. The phone must be on the **same Wi‑Fi** as the PC. **Do not use `127.0.0.1` on the phone** — that points at the phone itself.
+
+**Port 8001 — you usually do not need to fix anything**
+
+- The script tries **8001**, then **8002, 8003, …** automatically until a port is free. You **do not** have to run `taskkill` first.
+- If the window shows port **8002** (or higher), the phone URL **must use that port**.
+- **Require** port 8001 only (fail if busy): before running the script, `set PHOTOBOOTH_STRICT_PORT=1` (or add to `.env.standalone`).
+- **Pick a starting port:** `set API_PORT=8010` then `scripts\run-api-standalone.bat`.
+
+**If you still need to free a port manually (Windows)**
+
+```bat
+netstat -ano | findstr :8001
+taskkill /PID <pid_from_last_column> /F
+```
+
+**More detail (plain text, for sharing with others)**
+
+- See **`scripts/README-WINDOWS-STANDALONE.txt`** in the repo (copy/paste friendly).
+
+**Optional**
 
 ```bat
 copy .env.standalone.example .env.standalone
-REM Edit .env.standalone: PHOTOBOOTH_ENABLE_PRINT_WATCHER=1 and optional PHOTOBOOTH_PRINTER_NAME
+REM Edit .env.standalone for printer watcher, API_PORT, etc.
 scripts\run-api-standalone.bat
 REM Optional: scripts\setup-standalone-venv.bat  (venv only, no server)
 ```
 
 List printer names: `powershell -File scripts\list-printers.ps1`
 
-Optional: `set API_PORT=8002`, `set DATA_DIR=D:\pb-data`, or set `PHOTOBOOTH_*` before `run-api-standalone.bat`.
+Other env vars: `set DATA_DIR=D:\pb-data`, `set PHOTOBOOTH_*` before `run-api-standalone.bat` (see `.env.standalone.example`).
 
 ### Run Docker and standalone together
 
@@ -85,12 +120,12 @@ Optional: `set API_PORT=8002`, `set DATA_DIR=D:\pb-data`, or set `PHOTOBOOTH_*` 
 
 No internet required; phones only need the same Wi‑Fi / hotspot as the computer.
 
-### Mobile APK: point at Docker **8000** vs standalone **8001**
+### Mobile APK: point at Docker **8000** vs standalone (**8001 or auto**)
 
 The app’s API URL is baked in at **`prepare-www`** / CI time (`PHOTOBOOTH_API_BASE`).
 
-- **Docker backend:** build with `api_base_url` = `http://<your-pc-LAN-ip>:8000`
-- **Standalone backend:** build with `api_base_url` = `http://<your-pc-LAN-ip>:8001`
+- **Docker backend:** `http://<your-pc-LAN-ip>:8000`
+- **Standalone backend:** `http://<your-pc-LAN-ip>:<port>` — use the **port printed** when you start the standalone script (**8001** if free, otherwise **8002+** on Windows/Mac/Linux). Do not assume 8001 if the window shows another port.
 
 Same GitHub **Run workflow** twice with different `api_base_url`, or locally:
 

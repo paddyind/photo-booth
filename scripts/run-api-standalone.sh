@@ -11,6 +11,9 @@
 #
 # The folder watcher prints new files under **/finals/ (see scripts/print_watcher.py).
 # Windows (GDI): use scripts/run-api-standalone.bat + pywin32 for best results.
+#
+# Port: if API_PORT (default 8001) is busy, the next free port is used (8002, …) and printed clearly.
+# Require an exact port only: PHOTOBOOTH_STRICT_PORT=1 ./scripts/run-api-standalone.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -103,9 +106,25 @@ if [[ "$_enable" == "1" ]]; then
 fi
 
 mkdir -p "$DATA_DIR"
+
+RESOLVED_PORT="$(python "$ROOT/scripts/standalone_preflight.py" resolve-port "$PORT")" || exit 1
+PORT="$RESOLVED_PORT"
+export API_PORT="$PORT"
+
+LAN_IP="$(python "$ROOT/scripts/standalone_preflight.py" lan-ip | tail -n 1)"
 echo ""
-echo "Standalone API: http://127.0.0.1:${PORT}  |  LAN: http://<this-mac-ip>:${PORT}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Local:   http://127.0.0.1:${PORT}"
+if [[ -n "$LAN_IP" ]]; then
+  echo "  LAN:     http://${LAN_IP}:${PORT}   ← use this for PHOTOBOOTH_API_BASE on the phone"
+else
+  echo "  LAN:     (not detected — try: ipconfig getifaddr en0  or  ip a)"
+  echo "           Same Wi‑Fi as this Mac; port ${PORT}"
+fi
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "DATA_DIR=$DATA_DIR"
 echo "FRAMES_DIR=$FRAMES_DIR"
+echo ""
+echo "Server running (Ctrl+C to stop). Build mobile with e.g. PHOTOBOOTH_API_BASE=http://${LAN_IP:-YOUR_LAN_IP}:${PORT}"
 echo ""
 python -m uvicorn apps.api.app.main:app --host 0.0.0.0 --port "$PORT"

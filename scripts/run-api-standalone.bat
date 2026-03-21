@@ -1,16 +1,19 @@
 @echo off
 setlocal EnableExtensions
-REM Photo Booth API on the host (no Docker). Default port 8001.
-REM Self-contained on Windows: Python 3.10+, .venv, deps, then uvicorn.
+REM ========================================================================
+REM  Photo Booth — Standalone API (Windows). No Docker required.
+REM  Run from repo root:  scripts\run-api-standalone.bat
 REM
-REM Optional printer / folder watcher (same window):
-REM   Copy .env.standalone.example to .env.standalone in the repo root and set:
-REM     PHOTOBOOTH_ENABLE_PRINT_WATCHER=1
-REM     PHOTOBOOTH_PRINTER_NAME=Your Printer Name
-REM     PHOTOBOOTH_DATA_DIR=...   (optional; defaults to DATA_DIR)
-REM Or set those variables before running this script.
+REM  PORT (read this if you were stuck on 8001):
+REM    • First tries API_PORT (default 8001). If busy, uses 8002, 8003, …
+REM      automatically — you do NOT need to kill anything first.
+REM    • After start, copy the "LAN" URL for the phone; the :PORT must match.
+REM    • Strict "fail if 8001 busy":  set PHOTOBOOTH_STRICT_PORT=1
+REM    • Different start port:       set API_PORT=8010
 REM
-REM For GDI printing on Windows, pywin32 is installed automatically when the watcher is enabled.
+REM  Optional: copy .env.standalone.example to .env.standalone (see file for vars).
+REM  Long help: scripts\README-WINDOWS-STANDALONE.txt
+REM ========================================================================
 
 cd /d "%~dp0.."
 
@@ -89,10 +92,41 @@ if "%_PW%"=="1" (
 )
 
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
+
+set "TEMP_API_PORT="
+for /f "delims=" %%p in ('python "%~dp0standalone_preflight.py" resolve-port %API_PORT%') do set "TEMP_API_PORT=%%p"
+if not defined TEMP_API_PORT (
+  echo Could not find a free port. Try: set API_PORT=8010
+  exit /b 1
+)
+set "API_PORT=%TEMP_API_PORT%"
+
 echo.
-echo Standalone API: http://127.0.0.1:%API_PORT%  ^|  LAN: http://^<this-pc-ip^>:%API_PORT%
+echo ----------------------------------------------------------------
+echo   Port: %API_PORT%  ^(if not 8001, your phone app must use this port^)
+echo   You do not need to free 8001 first — this script picks a free port.
+echo ----------------------------------------------------------------
+
+set "LAN_IP="
+for /f "delims=" %%i in ('python "%~dp0standalone_preflight.py" lan-ip') do set "LAN_IP=%%i"
+
+echo.
+echo ============================================================
+echo   Local:   http://127.0.0.1:%API_PORT%
+if defined LAN_IP (
+  echo   LAN:     http://%LAN_IP%:%API_PORT%   ^<- use for PHOTOBOOTH_API_BASE on the phone
+) else (
+  echo   LAN:     ^(not detected — run ipconfig and use your IPv4^)
+)
+echo ============================================================
 echo DATA_DIR=%DATA_DIR%
 echo FRAMES_DIR=%FRAMES_DIR%
+echo.
+if defined LAN_IP (
+  echo Server running ^(Ctrl+C to stop^). Mobile: PHOTOBOOTH_API_BASE=http://%LAN_IP%:%API_PORT%
+) else (
+  echo Server running ^(Ctrl+C to stop^). Set PHOTOBOOTH_API_BASE to http://YOUR_IPV4:%API_PORT%
+)
 echo.
 python -m uvicorn apps.api.app.main:app --host 0.0.0.0 --port %API_PORT%
 endlocal

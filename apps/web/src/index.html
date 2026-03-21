@@ -19,6 +19,10 @@
       .pill { background: #2a2a2a; border-radius: 999px; padding: 6px 10px; font-size: 13px; color: #ddd; }
       .primary { background: #00c2ff; color: #031018; font-weight: 700; }
       .secondary { background: #2f2f2f; color: #fff; }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
       .actions button { min-width: 150px; }
       .preview-pane { min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
       .preview-shell {
@@ -142,7 +146,7 @@
             <option value="pdf">PDF</option>
           </select>
           <button id="printBtn" class="secondary" style="display:none;">Print Final</button>
-          <button id="cleanupBtn" class="secondary" type="button" hidden>Clean saved files</button>
+          <button id="cleanupBtn" class="secondary" type="button">Clean saved files</button>
         </div>
         <div id="status" class="status">Loading…</div>
         <details id="debugPanel" class="muted" style="margin-top:8px;" hidden>
@@ -200,7 +204,7 @@
         window.PHOTOBOOTH_DEBUG === "1" ||
         (typeof location !== "undefined" &&
           (/(?:^|[?&#])debug=1(?:&|$)/.test(location.search) || /#debug\b/.test(location.hash)));
-      /** Show “Clean saved files” (mobile storage). Hidden by default; enable with PHOTOBOOTH_SHOW_CLEANUP or debug mode. */
+      /** Allow “Clean saved files” (enable with PHOTOBOOTH_SHOW_CLEANUP or debug). Button stays visible; disabled when off. */
       const SHOW_CLEANUP =
         DEBUG_MODE ||
         window.PHOTOBOOTH_SHOW_CLEANUP === true ||
@@ -277,15 +281,19 @@
       const debugPanel = document.getElementById("debugPanel");
 
       function applyProductionChrome() {
+        // Debug logs: completely hidden unless debug mode — keeps the UI clean.
         if (DEBUG_MODE) {
           debugPanel?.removeAttribute("hidden");
         } else {
           debugPanel?.setAttribute("hidden", "");
         }
-        if (SHOW_CLEANUP) {
-          cleanupBtn?.removeAttribute("hidden");
-        } else {
-          cleanupBtn?.setAttribute("hidden", "");
+        // Other controls stay visible; disable when not applicable.
+        if (cleanupBtn) {
+          cleanupBtn.removeAttribute("hidden");
+          cleanupBtn.disabled = !SHOW_CLEANUP;
+          cleanupBtn.title = SHOW_CLEANUP
+            ? ""
+            : "Not enabled for this build. Set PHOTOBOOTH_SHOW_CLEANUP=1 in prepare-www (mobile) or use ?debug=1.";
         }
       }
       const rearPreviewToolbar = document.getElementById("rearPreviewToolbar");
