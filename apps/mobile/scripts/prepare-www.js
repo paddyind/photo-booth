@@ -25,6 +25,16 @@ const rearDelayMs =
     ? Number(rearDelayRaw)
     : null;
 
+const hasCaptureCountdownEnv = Object.prototype.hasOwnProperty.call(
+  process.env,
+  "PHOTOBOOTH_CAPTURE_COUNTDOWN_SEC"
+);
+const captureCountdownRaw = process.env.PHOTOBOOTH_CAPTURE_COUNTDOWN_SEC;
+const captureCountdownSec =
+  hasCaptureCountdownEnv && String(captureCountdownRaw || "").trim() !== ""
+    ? Math.min(60, Math.max(0, Math.round(Number(captureCountdownRaw))))
+    : null;
+
 const suppressRearBrowserRaw = (
   process.env.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT || ""
 ).toLowerCase();
@@ -145,6 +155,7 @@ console.log(
     `${apiBase.trim() ? ` (apiBase=${apiBase.trim()})` : ""}` +
     `${hasEnable8x11Env ? ` (enable8x11=${enable8x11 ? "true" : "false"})` : ""}` +
     `${hasConnectivityDebugEnv ? ` (connectivityDebug=${connectivityDebugOn ? "true" : "false"})` : ""}` +
+    `${hasCaptureCountdownEnv && captureCountdownSec != null && !Number.isNaN(captureCountdownSec) ? ` (captureCountdownSec=${captureCountdownSec})` : ""}` +
     ` (fsDirectory=${fsDirectory}, savePath=${savePath})`
 );
 

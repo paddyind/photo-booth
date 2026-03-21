@@ -8,7 +8,37 @@
     <style>
       body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #111; color: #fff; }
       .wrap { max-width: 720px; margin: 0 auto; }
-      video { width: 100%; border-radius: 12px; background: #000; }
+      .video-stage {
+        position: relative;
+        width: 100%;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #000;
+      }
+      .video-stage video {
+        width: 100%;
+        display: block;
+        border-radius: 12px;
+        background: #000;
+      }
+      .capture-countdown-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.5);
+        font-size: clamp(72px, 22vw, 140px);
+        font-weight: 800;
+        color: #fff;
+        text-shadow: 0 4px 24px rgba(0, 0, 0, 0.8);
+        pointer-events: none;
+        z-index: 3;
+        line-height: 1;
+      }
+      .capture-countdown-overlay[hidden] {
+        display: none !important;
+      }
       button, select { padding: 10px 14px; border-radius: 8px; border: 0; margin-top: 10px; }
       .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
       .card { background: #1d1d1d; border-radius: 12px; padding: 12px; margin-top: 12px; }
@@ -130,10 +160,13 @@
   <body>
     <div class="wrap">
       <h1>Photo Booth</h1>
-      <p class="muted" id="appTagline">Start the camera, capture, pick a frame, then print. Rear camera uses auto-print after a short countdown — use <strong>Capture again</strong> above the preview to retake.</p>
+      <p class="muted" id="appTagline">Start the camera, choose a <strong>timer</strong> (5s / 10s) if you want time to pose, then capture. Rear camera uses auto-print after a short delay — use <strong>Capture again</strong> above the preview to retake.</p>
 
       <div class="card">
-        <video id="video" autoplay playsinline></video>
+        <div class="video-stage">
+          <video id="video" autoplay playsinline></video>
+          <div id="captureCountdownOverlay" class="capture-countdown-overlay" hidden aria-hidden="true"></div>
+        </div>
         <canvas id="canvas" style="display:none;"></canvas>
         <div class="row">
           <span class="pill">Camera</span>
@@ -147,6 +180,12 @@
           <select id="sizeSelect"></select>
           <span class="pill">Orientation</span>
           <select id="orientationSelect"></select>
+          <span class="pill" id="captureTimerLabel">Timer</span>
+          <select id="captureTimerSelect" title="Seconds to wait on the preview before taking the photo">
+            <option value="0">Off</option>
+            <option value="5" selected>5 s</option>
+            <option value="10">10 s</option>
+          </select>
           <button id="startCameraBtn" class="secondary">Start Camera</button>
           <button id="stopCameraBtn" class="secondary">Stop Camera</button>
           <button id="captureBtn" class="primary">Capture + Preview</button>
@@ -222,6 +261,15 @@
         Number(window.PHOTOBOOTH_REAR_PRINT_DELAY_MS) > 0
           ? Number(window.PHOTOBOOTH_REAR_PRINT_DELAY_MS)
           : 10000;
+      /**
+       * Pre-capture countdown (seconds, 0–60). Inject via prepare-www: PHOTOBOOTH_CAPTURE_COUNTDOWN_SEC.
+       * When unset, the Timer dropdown (Off / 5s / 10s) in the UI is used.
+       */
+      const rawCaptureCountdown = window.PHOTOBOOTH_CAPTURE_COUNTDOWN_SEC;
+      const CAPTURE_COUNTDOWN_LOCKED =
+        rawCaptureCountdown !== undefined &&
+        rawCaptureCountdown !== null &&
+        String(rawCaptureCountdown).trim() !== "";
       /**
        * When true, rear mode does not open the browser print tab after the delay (use host print_watcher only).
        * Inject PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT.
@@ -320,6 +368,8 @@
       const startCameraBtn = document.getElementById("startCameraBtn");
       const stopCameraBtn = document.getElementById("stopCameraBtn");
       const captureBtn = document.getElementById("captureBtn");
+      const captureTimerSelect = document.getElementById("captureTimerSelect");
+      const captureTimerLabel = document.getElementById("captureTimerLabel");
       const finalFormat = document.getElementById("finalFormat");
       const prepareFinalBtn = document.getElementById("prepareFinalBtn");
       const printBtn = document.getElementById("printBtn");
@@ -543,6 +593,50 @@
         return new Promise((resolve) => setTimeout(resolve, ms));
       }
 
+      function getCaptureCountdownSeconds() {
+        if (CAPTURE_COUNTDOWN_LOCKED) {
+          const n = Number(rawCaptureCountdown);
+          if (!Number.isFinite(n)) return 5;
+          return Math.min(60, Math.max(0, Math.round(n)));
+        }
+        const v = Number(captureTimerSelect && captureTimerSelect.value);
+        return Number.isFinite(v) ? Math.min(60, Math.max(0, v)) : 0;
+      }
+
+      /** Full-screen overlay over the live preview; returns false if camera stopped mid-countdown. */
+      async function runCaptureCountdownOverlay() {
+        const totalSec = getCaptureCountdownSeconds();
+        if (totalSec <= 0) return true;
+        const overlay = document.getElementById("captureCountdownOverlay");
+        if (!overlay) return true;
+        overlay.hidden = false;
+        overlay.setAttribute("aria-hidden", "false");
+        try {
+          for (let left = totalSec; left >= 1; left--) {
+            if (!activeStream || !video.videoWidth || !video.videoHeight) {
+              setStatus("Capture cancelled (camera stopped).", true);
+              return false;
+            }
+            overlay.textContent = String(left);
+            setStatus(
+              DEBUG_MODE
+                ? `Timer: ${left}s remaining (then capture)`
+                : `Get ready — ${left}s…`
+            );
+            if (isRearMode() && rearPrintCountdown && previewCard.style.display !== "none") {
+              rearPrintCountdown.classList.add("idle");
+              rearPrintCountdown.textContent = `Photo in ${left}s…`;
+            }
+            await sleep(1000);
+          }
+        } finally {
+          overlay.hidden = true;
+          overlay.setAttribute("aria-hidden", "true");
+          overlay.textContent = "";
+        }
+        return true;
+      }
+
       /**
        * Follow host print_watcher status for this final (matches filename from final URL).
        */
@@ -631,7 +725,16 @@
       async function readErrorBody(res) {
         try {
           const text = await res.text();
-          return text.slice(0, 240);
+          const slice = text.slice(0, 400);
+          try {
+            const j = JSON.parse(text);
+            if (j && j.detail != null) {
+              return typeof j.detail === "string" ? j.detail.slice(0, 400) : JSON.stringify(j.detail).slice(0, 400);
+            }
+          } catch (_e) {
+            /* not JSON */
+          }
+          return slice;
         } catch (_e) {
           return "";
         }
@@ -652,9 +755,18 @@
             apiBase: API_BASE,
             page: location.href,
           });
-          const hint = DEBUG_MODE
-            ? `${e.message} (api=${API_BASE}, online=${navigator.onLine})`
-            : "Cannot reach the photo booth server. Check Wi‑Fi and that the app is running.";
+          let hint;
+          if (DEBUG_MODE) {
+            hint = `${e.message} (api=${API_BASE}, online=${navigator.onLine})`;
+          } else if (label === "compose-final") {
+            hint =
+              "Could not finish the final photo (connection lost or server error). On the laptop, check the API window for a Python error, then try Capture again.";
+          } else if (label === "download-final") {
+            hint =
+              "The booth created the final file but the phone could not download it. Check Wi‑Fi, then tap Print or capture again.";
+          } else {
+            hint = "Cannot reach the photo booth server. Check Wi‑Fi and that the app is running.";
+          }
           throw new Error(hint);
         }
       }
@@ -969,6 +1081,11 @@
       }
 
       function stopCamera() {
+        const overlay = document.getElementById("captureCountdownOverlay");
+        if (overlay) {
+          overlay.hidden = true;
+          overlay.textContent = "";
+        }
         if (!activeStream) {
           setStatus("Camera already off");
           return;
@@ -1118,8 +1235,12 @@
             if (previewCard.style.display !== "none") {
               rearPreviewToolbar.classList.add("visible");
               rearPrintCountdown.classList.add("idle");
-              rearPrintCountdown.textContent = "Capturing…";
             }
+          }
+          const proceed = await runCaptureCountdownOverlay();
+          if (!proceed) return;
+          if (isRearMode() && rearPrintCountdown && previewCard.style.display !== "none") {
+            rearPrintCountdown.textContent = "Capturing…";
           }
           await runCaptureAndComposeCore();
         } finally {
@@ -1397,6 +1518,8 @@
           connectivityDebug: CONNECTIVITY_DEBUG,
           enable8x11: ENABLE_8X11,
           rearAutoPrintDelayMs: REAR_AUTO_PRINT_DELAY_MS,
+          captureCountdownSec: getCaptureCountdownSeconds(),
+          captureCountdownUiLocked: CAPTURE_COUNTDOWN_LOCKED,
           suppressRearBrowserPrint: SUPPRESS_REAR_BROWSER_PRINT,
           online: navigator.onLine,
           fsDirectory: FS_DIRECTORY,
@@ -1425,6 +1548,14 @@
         try {
           if (serverOk) {
             await loadOptions();
+            if (CAPTURE_COUNTDOWN_LOCKED) {
+              const n = getCaptureCountdownSeconds();
+              if (captureTimerSelect) {
+                captureTimerSelect.value = String(n);
+                captureTimerSelect.style.display = "none";
+              }
+              if (captureTimerLabel) captureTimerLabel.style.display = "none";
+            }
             applyCameraModeUI();
             updatePreviewRatio();
             await loadFrames(false);

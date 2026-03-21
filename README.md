@@ -194,6 +194,7 @@ The frame will then appear automatically in the frame dropdown after selecting t
 - When the user clicks **Prepare Final** (PNG or PDF), the backend generates the final output and then **deletes all preview images** for that `image_id`.
 - Camera mode behavior:
   - Mobile devices can switch between **Front** and **Rear** camera.
+  - **Pre-capture timer (pose time):** use the **Timer** control (**Off / 5 s / 10 s**; default **5 s**). A large countdown is shown over the live preview before the frame is grabbed (same flow for **Capture again**). **Mobile builds:** set **`PHOTOBOOTH_CAPTURE_COUNTDOWN_SEC`** (`0`–`60`) in **`prepare-www`** / CI to **lock** the duration and hide the dropdown (see `.env.example`).
   - **Rear mode** is locked to `4x6` + `portrait` + `story-memories` (if present). Output is **JPEG** only; **Prepare Final** is skipped — after capture the API composes the final automatically, then **auto-print** runs after the configured delay (default **10s**). Above the preview, **Capture again** retakes (cancels the timer); the banner shows **Printing in N s…** (or folder-print wording) until the timer elapses, then **Print opened** / **Sent to folder printer**. **Print Final** still opens immediately and cancels the countdown. Delay: inject **`PHOTOBOOTH_REAR_PRINT_DELAY_MS`** (ms).
   - **Front mode** keeps full interactive options (size/orientation/frame).
   - On laptops/desktops, camera mode is forced to front.

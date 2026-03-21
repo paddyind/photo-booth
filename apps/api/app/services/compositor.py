@@ -84,15 +84,18 @@ def compose_image(
 
     frame = Image.open(frame_path)
     if frame.mode in ("RGB", "P"):
+        # Key near-black pixels to transparent. Avoid putdata(list): for large frames
+        # (e.g. 1800×2700) that builds millions of tuples and can OOM on Windows.
         rgba = frame.convert("RGBA")
-        converted = []
-        for r, g, b, a in rgba.getdata():
+        raw = rgba.tobytes()
+        buf = bytearray(raw)
+        for i in range(0, len(buf), 4):
+            r, g, b = buf[i], buf[i + 1], buf[i + 2]
             if r < 15 and g < 15 and b < 15:
-                converted.append((r, g, b, 0))
+                buf[i + 3] = 0
             else:
-                converted.append((r, g, b, 255))
-        rgba.putdata(converted)
-        frame_rgba = rgba
+                buf[i + 3] = 255
+        frame_rgba = Image.frombytes("RGBA", rgba.size, bytes(buf))
     else:
         frame_rgba = frame.convert("RGBA")
 

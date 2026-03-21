@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
 from uuid import uuid4
+
+logger = logging.getLogger("photo_booth.api")
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -395,6 +398,24 @@ def compose_preview_from_id(payload: PreviewFromIdCreate) -> dict:
 
 @app.post("/compose/final")
 def compose_final(payload: FinalCreate) -> dict:
+    try:
+        return _compose_final_body(payload)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "compose_final failed image_id=%s frame_id=%s size=%s",
+            getattr(payload, "image_id", None),
+            getattr(payload, "frame_id", None),
+            getattr(payload, "size", None),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"{type(e).__name__}: {e}",
+        ) from e
+
+
+def _compose_final_body(payload: FinalCreate) -> dict:
     found = _find_original_path(payload.image_id)
     if not found:
         raise HTTPException(status_code=404, detail="Original image not found for image_id")
@@ -434,10 +455,13 @@ def compose_final(payload: FinalCreate) -> dict:
 
     # Optional: drop a copy into print-queue for folder-based auto-print (see scripts/print_watcher.py queue mode).
     if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE"):
-        qdir = Path(os.getenv("PHOTOBOOTH_PRINT_QUEUE_DIR", str(DATA_DIR / "print-queue"))).expanduser().resolve()
-        qdir.mkdir(parents=True, exist_ok=True)
-        dest = qdir / f"{final_path.stem}_{uuid4().hex[:8]}{final_path.suffix}"
-        shutil.copy2(final_path, dest)
+        try:
+            qdir = Path(os.getenv("PHOTOBOOTH_PRINT_QUEUE_DIR", str(DATA_DIR / "print-queue"))).expanduser().resolve()
+            qdir.mkdir(parents=True, exist_ok=True)
+            dest = qdir / f"{final_path.stem}_{uuid4().hex[:8]}{final_path.suffix}"
+            shutil.copy2(final_path, dest)
+        except OSError as e:
+            logger.warning("print-queue copy skipped: %s", e)
 
     final_url = (
         f"/finals/{session_folder}/{final_path.name}"
