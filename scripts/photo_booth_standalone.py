@@ -31,7 +31,7 @@ def load_env_standalone() -> None:
     path = ROOT / ".env.standalone"
     if not path.is_file():
         return
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         t = line.strip()
         if not t or t.startswith("#"):
             continue
@@ -224,6 +224,8 @@ def main() -> int:
     enable_watcher = _watcher_enabled()
     printer = _strip_quotes(os.environ.get("PHOTOBOOTH_PRINTER_NAME") or "").strip()
     pwm = (os.environ.get("PHOTOBOOTH_PRINT_WATCH_MODE") or "finals").strip().lower()
+    copy_final_raw = (os.environ.get("PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE") or "").strip().lower()
+    copy_final_on = copy_final_raw in ("1", "true", "yes", "on", "y")
 
     if enable_watcher:
         print("Syncing print-watcher dependencies …", flush=True)
@@ -247,6 +249,21 @@ def main() -> int:
         if pwm == "queue":
             wargs.extend(["--watch-mode", "queue"])
             print("Print watcher: mode=queue (print-queue → print → print-archive)", flush=True)
+            qdir = booth_data / "print-queue"
+            adir = booth_data / "print-archive"
+            qdir.mkdir(parents=True, exist_ok=True)
+            adir.mkdir(parents=True, exist_ok=True)
+            print(f"  Queue folder:  {qdir}", flush=True)
+            print(f"  Archive folder: {adir}", flush=True)
+            if not copy_final_on:
+                print("", flush=True)
+                print("  *** MVP: nothing will appear in print-queue until the API copies finals there ***", flush=True)
+                print("  Add this line to .env.standalone (same folder as this script):", flush=True)
+                print("    PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE=1", flush=True)
+                print("  Then restart run-api-standalone. No second script is required.", flush=True)
+                print("", flush=True)
+            else:
+                print("  PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE=1 — each /compose/final copies into print-queue here.", flush=True)
         else:
             print("Print watcher: mode=finals (any **/finals/** under DATA_DIR)", flush=True)
         if printer:

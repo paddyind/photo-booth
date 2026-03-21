@@ -194,7 +194,7 @@ The frame will then appear automatically in the frame dropdown after selecting t
 - When the user clicks **Prepare Final** (PNG or PDF), the backend generates the final output and then **deletes all preview images** for that `image_id`. On **Windows**, if the phone still has a preview **open**, the file can be **temporarily locked** (`WinError 32`); the API **retries** unlink and **does not fail** the final step if cleanup stays busy.
 - Camera mode behavior:
   - Mobile devices can switch between **Front** and **Rear** camera.
-  - **Pre-capture timer (pose time):** use the **Timer** control (**Off / 5 s / 10 s**; default **5 s**). A large countdown is shown over the live preview before the frame is grabbed (same flow for **Capture again**). **Older APKs without the Timer row** still get a **5 s** countdown on **mobile** (Capacitor/Android/iOS) and the overlay is **created in JS** if missing. **Rebuild** with `npm run prepare-www` + `cap sync` for the full Timer UI and optional **`PHOTOBOOTH_CAPTURE_COUNTDOWN_SEC`** in **`prepare-www`** (see `.env.example`).
+  - **Pose timer (before snapshot):** control **Pose (before photo)** — **5 s / 10 s / Immediate** (default **5 s**). A large **“Get ready — snapshot in N”** countdown appears **on the live camera** before the frame is taken (same for **Capture again**). This is **not** the rear **auto-print** countdown (default **10 s after** the photo). **Older APKs** without the dropdown still get **5 s** pose time on mobile when the overlay is injected. **Rebuild** with `npm run prepare-www` + `cap sync` for the full UI and optional **`PHOTOBOOTH_CAPTURE_COUNTDOWN_SEC`** (see `.env.example`).
   - **Rear mode** is locked to `4x6` + `portrait` + `story-memories` (if present). Output is **JPEG** only; **Prepare Final** is skipped — after capture the API composes the final automatically, then **auto-print** runs after the configured delay (default **10s**). Above the preview, **Capture again** retakes (cancels the timer); the banner shows **Printing in N s…** (or folder-print wording) until the timer elapses, then **Print opened** / **Sent to folder printer**. **Print Final** still opens immediately and cancels the countdown. Delay: inject **`PHOTOBOOTH_REAR_PRINT_DELAY_MS`** (ms).
   - **Front mode** keeps full interactive options (size/orientation/frame).
   - On laptops/desktops, camera mode is forced to front.
@@ -251,15 +251,24 @@ Optional: **`PHOTOBOOTH_PRINTER_NAME`** or **`--printer "Your Printer"`** (Windo
 
 To **never print the same file twice**, use **queue mode**: the watcher watches only **`DATA_DIR/print-queue`** (override with **`PHOTOBOOTH_PRINT_QUEUE_DIR`**). When a printable file appears and finishes writing, it is **printed**, then **moved** to **`DATA_DIR/print-archive`** (**`PHOTOBOOTH_PRINT_ARCHIVE_DIR`**).
 
-1. In **`.env.standalone`**:  
-   - **`PHOTOBOOTH_PRINTER_NAME="…"`** (starts the watcher; or set **`PHOTOBOOTH_ENABLE_PRINT_WATCHER=1`** with no name to use the system default printer)  
-   - **`PHOTOBOOTH_PRINT_WATCH_MODE=queue`**  
-   - **`PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE=1`** — API copies each new final into `print-queue` after `/compose/final` (original final stays under `…/finals/` for URLs/downloads).  
-   - Optional: **`PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT=1`** on mobile so only the queue printer runs.
+**No extra script:** **`run-api-standalone.sh`** / **`.bat`** starts **both** the API **and** `print_watcher.py` in one process. You do **not** run `run-print-watcher` separately unless you are debugging.
 
-2. Start **`run-api-standalone.sh`** / **`.bat`** as usual. Folders **`print-queue`** and **`print-archive`** are created under **`DATA_DIR`** as needed.
+**MVP checklist (all in `.env.standalone` next to the repo):**
 
-3. **Manual testing:** drop a `.jpg` / `.png` / `.pdf` into `print-queue`; after print it should appear under `print-archive`.
+1. Copy **`.env.standalone.example` → `.env.standalone`** (or merge these lines into your file).
+2. Set exactly:
+   - **`PHOTOBOOTH_PRINTER_NAME="Exact Windows/macOS queue name"`** — required so the watcher starts.
+   - **`PHOTOBOOTH_PRINT_WATCH_MODE=queue`** — watcher watches **`DATA_DIR/print-queue`** only.
+   - **`PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE=1`** — **required** or **nothing** is copied into `print-queue` after **`/compose/final`** (the API does not drop files there unless this is `1`).
+3. **`DATA_DIR=./data-standalone`** (or your path) — queue folders are **`DATA_DIR/print-queue`** and **`DATA_DIR/print-archive`**.
+4. Restart **`run-api-standalone`**. On startup the console prints the **full paths** to `print-queue` / `print-archive`. If you see a **WARNING** about `PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE`, add that line and restart.
+5. **Verify from the phone or PC:** open **`http://<LAN>:<port>/health`** — JSON should include **`print_queue_copy_enabled": true`** and **`print_queue_dir`** (absolute path). If **`print_queue_copy_enabled`** is **false**, the API will not enqueue files.
+
+Optional: **`PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT=1`** on mobile so only the queue printer runs (no browser print tab).
+
+**Manual testing:** drop a `.jpg` / `.png` / `.pdf` into `print-queue`; after print it should appear under `print-archive`.
+
+**Second printer / external utility (drop zone):** you can **also** copy each new final into another folder that your other tool watches. In **`.env.standalone`** set **`PHOTOBOOTH_COPY_FINAL_TO_DROPZONE=1`** and **`PHOTOBOOTH_DROPZONE_DIR`** to an absolute or repo-relative path. Example (Google Drive on Windows, spaces in path): **`PHOTOBOOTH_DROPZONE_DIR="G:/My Drive/NandS/Input"`** — keep **Drive synced** and the **`G:`** drive available when the booth runs. The API writes a **unique filename**; the canonical file under **`…/finals/`** is unchanged. Check **`/health`** for **`dropzone_copy_enabled`** and **`dropzone_dir`**.
 
 **Default mode** (**`PHOTOBOOTH_PRINT_WATCH_MODE=finals`** or unset) keeps the legacy behavior: recursive watch for **`**/finals/**`**, files are **not** moved after print.
 

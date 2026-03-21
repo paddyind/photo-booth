@@ -25,16 +25,30 @@
         position: absolute;
         inset: 0;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: rgba(0, 0, 0, 0.5);
+        gap: 6px;
+        background: rgba(0, 0, 0, 0.62);
+        pointer-events: none;
+        z-index: 100;
+        line-height: 1;
+        text-align: center;
+        padding: 12px;
+      }
+      .capture-countdown-sub {
+        font-size: clamp(14px, 4vw, 20px);
+        font-weight: 700;
+        color: #9ef;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+      }
+      .capture-countdown-num {
         font-size: clamp(72px, 22vw, 140px);
         font-weight: 800;
         color: #fff;
-        text-shadow: 0 4px 24px rgba(0, 0, 0, 0.8);
-        pointer-events: none;
-        z-index: 3;
-        line-height: 1;
+        text-shadow: 0 4px 24px rgba(0, 0, 0, 0.85);
       }
       .capture-countdown-overlay[hidden] {
         display: none !important;
@@ -160,7 +174,11 @@
   <body>
     <div class="wrap">
       <h1>Photo Booth</h1>
-      <p class="muted" id="appTagline">Start the camera, choose a <strong>timer</strong> (5s / 10s) if you want time to pose, then capture. Rear camera uses auto-print after a short delay — use <strong>Capture again</strong> above the preview to retake.</p>
+      <p class="muted" id="appTagline">
+        <strong>Pose (before photo)</strong> — pick <strong>5 s</strong> or <strong>10 s</strong> (or Immediate), then tap <strong>Capture + Preview</strong>; you’ll see a big countdown on the <strong>live camera</strong> before the snapshot.
+        <strong>Rear mode:</strong> after the photo, a separate <strong>auto-print</strong> countdown runs (default 10 s) — that is not the pose timer.
+        Use <strong>Capture again</strong> above the preview to retake.
+      </p>
 
       <div class="card">
         <div class="video-stage">
@@ -180,11 +198,14 @@
           <select id="sizeSelect"></select>
           <span class="pill">Orientation</span>
           <select id="orientationSelect"></select>
-          <span class="pill" id="captureTimerLabel">Timer</span>
-          <select id="captureTimerSelect" title="Seconds to wait on the preview before taking the photo">
-            <option value="0">Off</option>
-            <option value="5" selected>5 s</option>
-            <option value="10">10 s</option>
+          <span class="pill" id="captureTimerLabel">Pose (before photo)</span>
+          <select
+            id="captureTimerSelect"
+            title="Wait time on the live camera before the snapshot (not the print delay after the photo)"
+          >
+            <option value="5" selected>5 s — then snap</option>
+            <option value="10">10 s — then snap</option>
+            <option value="0">Immediate (no wait)</option>
           </select>
           <button id="startCameraBtn" class="secondary">Start Camera</button>
           <button id="stopCameraBtn" class="secondary">Stop Camera</button>
@@ -460,9 +481,9 @@
         if (rearCountdownSecondsLeft != null && rearCountdownSecondsLeft > 0) {
           rearPrintCountdown.classList.remove("idle");
           if (SUPPRESS_REAR_BROWSER_PRINT) {
-            rearPrintCountdown.textContent = `Booth print in ${rearCountdownSecondsLeft} s…`;
+            rearPrintCountdown.textContent = `Booth auto-print in ${rearCountdownSecondsLeft} s…`;
           } else {
-            rearPrintCountdown.textContent = `Printing in ${rearCountdownSecondsLeft} s…`;
+            rearPrintCountdown.textContent = `Auto-print in ${rearCountdownSecondsLeft} s… (after photo)`;
           }
         } else if (rearCountdownSecondsLeft === 0) {
           rearPrintCountdown.classList.remove("idle");
@@ -472,7 +493,7 @@
         } else {
           rearPrintCountdown.classList.add("idle");
           if (currentFinalUrl) {
-            rearPrintCountdown.textContent = `Ready — Print now or wait for auto-print (${rearPrintDelayLabel()}). Capture again to retake.`;
+            rearPrintCountdown.textContent = `Ready — Print now or wait (${rearPrintDelayLabel()} auto-print). Capture again to retake.`;
           } else {
             rearPrintCountdown.textContent = "Tap Capture again to take another photo.";
           }
@@ -504,18 +525,18 @@
           if (DEBUG_MODE) {
             if (SUPPRESS_REAR_BROWSER_PRINT) {
               setStatus(
-                `Rear: printing in ${left} s (${rearPrintDelayLabel()} total) — booth printer. Capture again to cancel.`
+                `Rear: auto-print in ${left} s (${rearPrintDelayLabel()} total) — booth printer. Capture again to cancel.`
               );
             } else {
               setStatus(
-                `Rear: printing in ${left} s (${rearPrintDelayLabel()} total). Capture again or Print now.`
+                `Rear: auto-print in ${left} s (${rearPrintDelayLabel()} total). Capture again or Print now.`
               );
             }
           } else {
             setStatus(
               SUPPRESS_REAR_BROWSER_PRINT
-                ? `Booth print in ${left} s — Capture again to cancel`
-                : `Printing in ${left} s — Capture again or Print now`
+                ? `Booth auto-print in ${left} s — Capture again to cancel`
+                : `Auto-print in ${left} s (after photo) — Capture again or Print now`
             );
           }
         }
@@ -604,9 +625,9 @@
         el.className = "capture-countdown-overlay";
         el.setAttribute("aria-hidden", "true");
         el.style.cssText =
-          "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;" +
-          "background:rgba(0,0,0,0.55);font-size:clamp(64px,20vw,128px);font-weight:800;color:#fff;" +
-          "z-index:50;line-height:1;pointer-events:none;text-shadow:0 4px 24px rgba(0,0,0,0.85);";
+          "position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+          "gap:6px;background:rgba(0,0,0,0.62);z-index:100;line-height:1;pointer-events:none;" +
+          "text-align:center;padding:12px;";
         const stage = document.querySelector(".video-stage");
         if (stage) {
           if (stage.style.position !== "relative" && stage.style.position !== "absolute") {
@@ -640,7 +661,7 @@
         return Number.isFinite(v) ? Math.min(60, Math.max(0, v)) : 0;
       }
 
-      /** Full-screen overlay over the live preview; returns false if camera stopped mid-countdown. */
+      /** Big countdown ON THE LIVE CAMERA before canvas snapshot (not the rear auto-print delay). */
       async function runCaptureCountdownOverlay() {
         const totalSec = getCaptureCountdownSeconds();
         if (totalSec <= 0) return true;
@@ -653,22 +674,24 @@
               setStatus("Capture cancelled (camera stopped).", true);
               return false;
             }
-            overlay.textContent = String(left);
+            overlay.innerHTML =
+              `<div class="capture-countdown-sub">Get ready — snapshot in</div>` +
+              `<div class="capture-countdown-num">${left}</div>`;
             setStatus(
               DEBUG_MODE
-                ? `Timer: ${left}s remaining (then capture)`
-                : `Get ready — ${left}s…`
+                ? `Pose timer: ${left}s left (then snapshot on live camera)`
+                : `Get ready — snapshot in ${left}s…`
             );
             if (isRearMode() && rearPrintCountdown && previewCard.style.display !== "none") {
               rearPrintCountdown.classList.add("idle");
-              rearPrintCountdown.textContent = `Photo in ${left}s…`;
+              rearPrintCountdown.textContent = `Snapshot in ${left}s…`;
             }
             await sleep(1000);
           }
         } finally {
           overlay.hidden = true;
           overlay.setAttribute("aria-hidden", "true");
-          overlay.textContent = "";
+          overlay.innerHTML = "";
         }
         return true;
       }
@@ -1120,7 +1143,7 @@
         const overlay = document.getElementById("captureCountdownOverlay");
         if (overlay) {
           overlay.hidden = true;
-          overlay.textContent = "";
+          overlay.innerHTML = "";
         }
         if (!activeStream) {
           setStatus("Camera already off");

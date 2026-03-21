@@ -204,7 +204,22 @@ def _now_iso() -> str:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "photo-booth-api"}
+    """Include print-queue / dropzone flags so you can verify setup from the phone browser."""
+    qdir = Path(os.getenv("PHOTOBOOTH_PRINT_QUEUE_DIR", str(DATA_DIR / "print-queue"))).expanduser().resolve()
+    pwm = (os.getenv("PHOTOBOOTH_PRINT_WATCH_MODE") or "finals").strip().lower()
+    dz_on = _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_DROPZONE")
+    dz_path = (os.getenv("PHOTOBOOTH_DROPZONE_DIR") or "").strip()
+    dz_resolved = str(Path(dz_path).expanduser().resolve()) if dz_path else None
+    return {
+        "status": "ok",
+        "service": "photo-booth-api",
+        "data_dir": str(DATA_DIR),
+        "print_watch_mode": pwm,
+        "print_queue_copy_enabled": _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE"),
+        "print_queue_dir": str(qdir),
+        "dropzone_copy_enabled": dz_on,
+        "dropzone_dir": dz_resolved,
+    }
 
 
 PRINT_STATUS_FILENAME = ".photobooth-print-status.json"
@@ -486,8 +501,26 @@ def _compose_final_body(payload: FinalCreate) -> dict:
             qdir.mkdir(parents=True, exist_ok=True)
             dest = qdir / f"{final_path.stem}_{uuid4().hex[:8]}{final_path.suffix}"
             shutil.copy2(final_path, dest)
+            logger.info("print-queue: copied final to %s", dest)
         except OSError as e:
             logger.warning("print-queue copy skipped: %s", e)
+
+    # Optional: copy final to an external folder watched by another printer utility (in addition to print-queue).
+    if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_DROPZONE"):
+        dz_raw = (os.getenv("PHOTOBOOTH_DROPZONE_DIR") or "").strip()
+        if not dz_raw:
+            logger.warning(
+                "PHOTOBOOTH_COPY_FINAL_TO_DROPZONE is set but PHOTOBOOTH_DROPZONE_DIR is empty — skipping dropzone copy"
+            )
+        else:
+            try:
+                dz = Path(dz_raw).expanduser().resolve()
+                dz.mkdir(parents=True, exist_ok=True)
+                dest = dz / f"{final_path.stem}_{uuid4().hex[:8]}{final_path.suffix}"
+                shutil.copy2(final_path, dest)
+                logger.info("dropzone: copied final to %s", dest)
+            except OSError as e:
+                logger.warning("dropzone copy skipped: %s", e)
 
     final_url = (
         f"/finals/{session_folder}/{final_path.name}"
