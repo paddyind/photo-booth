@@ -154,14 +154,42 @@
       ]);
       const FS_DIRECTORY_RAW = (window.PHOTOBOOTH_FS_DIRECTORY || "DOCUMENTS").toString().toUpperCase();
       const FS_DIRECTORY = ALLOWED_FS_DIRECTORIES.has(FS_DIRECTORY_RAW) ? FS_DIRECTORY_RAW : "DOCUMENTS";
-      const SAVE_PATH_ORIGINALS = (window.PHOTOBOOTH_SAVE_PATH_ORIGINALS || "PhotoBooth/originals")
-        .toString()
-        .replace(/^\/+|\/+$/g, "")
-        .replace(/\\/g, "/");
-      const SAVE_PATH_FINALS = (window.PHOTOBOOTH_SAVE_PATH_FINALS || "PhotoBooth/finals")
-        .toString()
-        .replace(/^\/+|\/+$/g, "")
-        .replace(/\\/g, "/");
+      /**
+       * Parent path under FS_DIRECTORY (e.g. Download, Documents). Empty = only dated folder at root.
+       * Injected via prepare-www: PHOTOBOOTH_SAVE_PATH (default Download for phone + Syncthing).
+       */
+      function normalizeRelPath(p) {
+        return (p == null || p === "" ? "" : String(p))
+          .trim()
+          .replace(/^\/+|\/+$/g, "")
+          .replace(/\\/g, "/");
+      }
+      const DATED_FOLDER_STORAGE_KEY = "photobooth_event_sync_folder_v1";
+      /** Reused across app updates; created on first run. Format: PhotoBooth_YYYYMMDD */
+      function getOrCreateEventFolderName() {
+        try {
+          let name = localStorage.getItem(DATED_FOLDER_STORAGE_KEY);
+          if (name && /^PhotoBooth_\d{8}$/.test(name)) return name;
+          const d = new Date();
+          const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+          name = `PhotoBooth_${ymd}`;
+          localStorage.setItem(DATED_FOLDER_STORAGE_KEY, name);
+          return name;
+        } catch (_e) {
+          const d = new Date();
+          return `PhotoBooth_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+        }
+      }
+      const EVENT_FOLDER_NAME = getOrCreateEventFolderName();
+      let savePathParent = normalizeRelPath(window.PHOTOBOOTH_SAVE_PATH);
+      if (savePathParent === "" && window.PHOTOBOOTH_SAVE_PATH == null) {
+        const legO = normalizeRelPath(window.PHOTOBOOTH_SAVE_PATH_ORIGINALS);
+        const legF = normalizeRelPath(window.PHOTOBOOTH_SAVE_PATH_FINALS);
+        if (legO && legF && legO === legF) savePathParent = legO;
+      }
+      const SAVE_PATH = savePathParent
+        ? `${savePathParent}/${EVENT_FOLDER_NAME}`
+        : EVENT_FOLDER_NAME;
       const video = document.getElementById("video");
       const canvas = document.getElementById("canvas");
       const preview = document.getElementById("preview");
@@ -290,11 +318,16 @@
         return `${meta.baseName}_${meta.captureTs}_${meta.camera}_${meta.size}_${meta.orientation}_${safeFrame}`;
       }
 
+      /**
+       * Browser download: suggest PhotoBooth/<file> so many browsers save under Downloads/PhotoBooth/.
+       * (Some browsers flatten to a single filename; files still start with recognizable names.)
+       */
       function triggerDownloadBlob(blob, filename) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = filename;
+        const safeFolder = SAVE_PATH || "PhotoBooth";
+        a.download = `${safeFolder}/${filename}`.replace(/\/+/g, "/");
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -332,28 +365,30 @@
         let acc = "";
         for (const part of parts) {
           acc = acc ? `${acc}/${part}` : part;
-          if (typeof fsPlugin.mkdir === "function") {
+          if (typeof fsPlugin.mkdir !== "function") continue;
+          try {
             await fsPlugin.mkdir({ path: acc, directory, recursive: true });
+          } catch (e) {
+            // Android Capacitor often throws "Directory exists" — treat as success.
+            const msg = (e && e.message) || String(e);
+            if (/exist/i.test(msg) || /already/i.test(msg)) continue;
+            throw e;
           }
         }
       }
 
-      function saveFolderForCategory(category) {
-        return category === "final" ? SAVE_PATH_FINALS : SAVE_PATH_ORIGINALS;
-      }
-
       /**
-       * Save blob on native app under configured folder, or trigger browser download on web.
+       * Save blob on native app under SAVE_PATH (PhotoBooth), or browser download to Downloads/PhotoBooth/…
        * @param {"original"|"final"} category
        */
       async function saveBlobToPhotoBoothFolder(blob, filename, category = "original") {
-        const folder = saveFolderForCategory(category);
+        const folder = SAVE_PATH;
         const relativeFilePath = `${folder}/${filename}`;
         if (!isCapacitorNative()) {
           triggerDownloadBlob(blob, filename);
           return {
             mode: "download",
-            path: `Downloads/${filename}`,
+            path: `Downloads/${relativeFilePath}`,
             category,
             folder,
             fsDirectory: FS_DIRECTORY,
@@ -364,7 +399,7 @@
           triggerDownloadBlob(blob, filename);
           return {
             mode: "download",
-            path: `Downloads/${filename}`,
+            path: `Downloads/${relativeFilePath}`,
             category,
             folder,
             fsDirectory: FS_DIRECTORY,
@@ -392,7 +427,7 @@
           triggerDownloadBlob(blob, filename);
           return {
             mode: "download",
-            path: `Downloads/${filename}`,
+            path: `Downloads/${relativeFilePath}`,
             category,
             folder,
             fsDirectory: FS_DIRECTORY,
@@ -432,17 +467,14 @@
         }
         await ensureNativeStoragePermission();
         try {
-          let deleted = 0;
-          deleted += await deleteFlatFilesInFsDir(fsPlugin, FS_DIRECTORY, SAVE_PATH_ORIGINALS);
-          deleted += await deleteFlatFilesInFsDir(fsPlugin, FS_DIRECTORY, SAVE_PATH_FINALS);
+          const deleted = await deleteFlatFilesInFsDir(fsPlugin, FS_DIRECTORY, SAVE_PATH);
           setStatus(
-            `Cleanup complete. Removed ${deleted} item(s) under ${FS_DIRECTORY}: ${SAVE_PATH_ORIGINALS}, ${SAVE_PATH_FINALS}`
+            `Cleanup complete. Removed ${deleted} file(s) under ${FS_DIRECTORY}/${SAVE_PATH}`
           );
           logDebug("Cleanup complete", {
             deleted,
             fsDirectory: FS_DIRECTORY,
-            originals: SAVE_PATH_ORIGINALS,
-            finals: SAVE_PATH_FINALS,
+            savePath: SAVE_PATH,
           });
         } catch (e) {
           setStatus(`Cleanup failed: ${e.message}`, true);
@@ -843,8 +875,13 @@
           enable8x11: ENABLE_8X11,
           online: navigator.onLine,
           fsDirectory: FS_DIRECTORY,
-          saveOriginals: SAVE_PATH_ORIGINALS,
-          saveFinals: SAVE_PATH_FINALS,
+          saveParent: savePathParent || "(none — dated folder only)",
+          eventFolder: EVENT_FOLDER_NAME,
+          fullSavePath: SAVE_PATH,
+          syncthingHint:
+            FS_DIRECTORY === "EXTERNAL_STORAGE"
+              ? `Phone: /storage/emulated/0/${SAVE_PATH}/`
+              : "Use Debug logs path after save; or set EXTERNAL_STORAGE + Download for a fixed public folder.",
         });
         await ensureNativeStoragePermission();
         await checkApiHealth();

@@ -32,19 +32,14 @@ on:
         default: false
         type: boolean
       fs_directory:
-        description: "Capacitor Filesystem directory for saves (DOCUMENTS, DATA, EXTERNAL, ...)."
+        description: "Capacitor Filesystem root (use EXTERNAL_STORAGE + save_path Download for Samsung/Syncthing)."
         required: false
-        default: "DOCUMENTS"
+        default: "EXTERNAL_STORAGE"
         type: string
-      save_path_originals:
-        description: "Relative folder for camera originals under fs_directory (Syncthing-friendly)."
+      save_path:
+        description: "Parent folder under fs_directory; app creates PhotoBooth_YYYYMMDD inside it (e.g. Download or Documents)."
         required: false
-        default: "PhotoBooth/originals"
-        type: string
-      save_path_finals:
-        description: "Relative folder for final PNG/JPEG/PDF under fs_directory (point Syncthing at this for laptop printing)."
-        required: false
-        default: "PhotoBooth/finals"
+        default: "Download"
         type: string
 
 jobs:
@@ -68,9 +63,8 @@ jobs:
         env:
           PHOTOBOOTH_API_BASE: ${{ inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}
           PHOTOBOOTH_ENABLE_8X11: ${{ inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}
-          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'DOCUMENTS' }}
-          PHOTOBOOTH_SAVE_PATH_ORIGINALS: ${{ inputs.save_path_originals || vars.PHOTOBOOTH_SAVE_PATH_ORIGINALS || 'PhotoBooth/originals' }}
-          PHOTOBOOTH_SAVE_PATH_FINALS: ${{ inputs.save_path_finals || vars.PHOTOBOOTH_SAVE_PATH_FINALS || 'PhotoBooth/finals' }}
+          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'EXTERNAL_STORAGE' }}
+          PHOTOBOOTH_SAVE_PATH: ${{ inputs.save_path || vars.PHOTOBOOTH_SAVE_PATH || 'Download' }}
         run: |
           cd apps/mobile
           npm run prepare-www
@@ -122,9 +116,8 @@ jobs:
         env:
           PHOTOBOOTH_API_BASE: ${{ inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}
           PHOTOBOOTH_ENABLE_8X11: ${{ inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}
-          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'DOCUMENTS' }}
-          PHOTOBOOTH_SAVE_PATH_ORIGINALS: ${{ inputs.save_path_originals || vars.PHOTOBOOTH_SAVE_PATH_ORIGINALS || 'PhotoBooth/originals' }}
-          PHOTOBOOTH_SAVE_PATH_FINALS: ${{ inputs.save_path_finals || vars.PHOTOBOOTH_SAVE_PATH_FINALS || 'PhotoBooth/finals' }}
+          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'EXTERNAL_STORAGE' }}
+          PHOTOBOOTH_SAVE_PATH: ${{ inputs.save_path || vars.PHOTOBOOTH_SAVE_PATH || 'Download' }}
         run: |
           cd apps/mobile
           npm run prepare-www
@@ -152,6 +145,14 @@ jobs:
 
           if not has_tag_with_name("uses-permission", "android.permission.CAMERA"):
               ET.SubElement(root, "uses-permission", {f"{android_ns}name": "android.permission.CAMERA"})
+
+          for perm, max_sdk in [
+              ("android.permission.WRITE_EXTERNAL_STORAGE", "32"),
+              ("android.permission.READ_EXTERNAL_STORAGE", "32"),
+          ]:
+              if not has_tag_with_name("uses-permission", perm):
+                  p = ET.SubElement(root, "uses-permission", {f"{android_ns}name": perm})
+                  p.set(f"{android_ns}maxSdkVersion", max_sdk)
 
           if not has_tag_with_name("uses-feature", "android.hardware.camera.any"):
               ET.SubElement(
@@ -244,9 +245,8 @@ jobs:
         env:
           PHOTOBOOTH_API_BASE: ${{ inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}
           PHOTOBOOTH_ENABLE_8X11: ${{ inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}
-          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'DOCUMENTS' }}
-          PHOTOBOOTH_SAVE_PATH_ORIGINALS: ${{ inputs.save_path_originals || vars.PHOTOBOOTH_SAVE_PATH_ORIGINALS || 'PhotoBooth/originals' }}
-          PHOTOBOOTH_SAVE_PATH_FINALS: ${{ inputs.save_path_finals || vars.PHOTOBOOTH_SAVE_PATH_FINALS || 'PhotoBooth/finals' }}
+          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'EXTERNAL_STORAGE' }}
+          PHOTOBOOTH_SAVE_PATH: ${{ inputs.save_path || vars.PHOTOBOOTH_SAVE_PATH || 'Download' }}
         run: |
           cd apps/mobile
           npm run prepare-www
@@ -335,9 +335,8 @@ jobs:
         env:
           PHOTOBOOTH_API_BASE: ${{ inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}
           PHOTOBOOTH_ENABLE_8X11: ${{ inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}
-          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'DOCUMENTS' }}
-          PHOTOBOOTH_SAVE_PATH_ORIGINALS: ${{ inputs.save_path_originals || vars.PHOTOBOOTH_SAVE_PATH_ORIGINALS || 'PhotoBooth/originals' }}
-          PHOTOBOOTH_SAVE_PATH_FINALS: ${{ inputs.save_path_finals || vars.PHOTOBOOTH_SAVE_PATH_FINALS || 'PhotoBooth/finals' }}
+          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'EXTERNAL_STORAGE' }}
+          PHOTOBOOTH_SAVE_PATH: ${{ inputs.save_path || vars.PHOTOBOOTH_SAVE_PATH || 'Download' }}
         run: |
           cd apps/mobile
           npm run prepare-www

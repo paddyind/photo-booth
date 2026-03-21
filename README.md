@@ -133,11 +133,11 @@ The frame will then appear automatically in the frame dropdown after selecting t
   - **Front mode** keeps full interactive options (size/orientation/frame).
   - On laptops/desktops, camera mode is forced to front.
 - File save behavior:
-  - Original capture and final output are saved with `NAME_or_NO_NAME + timestamp` in the filename.
-  - On Capacitor mobile builds, **originals** and **finals** go to **separate configurable folders** (defaults: `PhotoBooth/originals` and `PhotoBooth/finals` under the Capacitor `DOCUMENTS` volume).
-  - Configure via env vars consumed by `apps/mobile/scripts/prepare-www.js` (see `.env.example`): `PHOTOBOOTH_FS_DIRECTORY`, `PHOTOBOOTH_SAVE_PATH_ORIGINALS`, `PHOTOBOOTH_SAVE_PATH_FINALS`.
-  - Point **Syncthing** (or similar) at the **finals** folder on the phone so PNG/JPEG/PDF sync to a laptop folder for USB printing—mirrors a “DCIM/photobooth → laptop” style workflow while keeping finals separate from camera originals.
-  - In browser/laptop fallback mode, files download to the browser default Downloads location.
+  - Original capture and final output are saved with `NAME_or_NO_NAME + timestamp` in the filename (`*_original.jpg`, `*_final.png`, etc.).
+  - **Dated event folder** `PhotoBooth_YYYYMMDD` is created on **first app open** and **stored in `localStorage`** — the **same folder is reused** after APK updates until you **clear app storage** (then a new `PhotoBooth_YYYYMMDD` is created for that day).
+  - **Parent path** comes from `PHOTOBOOTH_SAVE_PATH` (default **`Download`**) under `PHOTOBOOTH_FS_DIRECTORY` (default **`EXTERNAL_STORAGE`**). Full relative path example: **`Download/PhotoBooth_20260321`** → on many phones that is **`/storage/emulated/0/Download/PhotoBooth_20260321/`** — use that (or **My Files → Download → PhotoBooth_…**) as the **Syncthing** folder on the phone.
+  - For **My Files → Documents** instead, set `PHOTOBOOTH_SAVE_PATH=Documents`. For **app-private** storage only, use `PHOTOBOOTH_FS_DIRECTORY=DOCUMENTS` and set `PHOTOBOOTH_SAVE_PATH` empty when running `prepare-www` (see `.env.example`).
+  - **Laptop / browser**: downloads use the same path shape (`Download/PhotoBooth_YYYYMMDD/…` or dated-only) under the browser’s download location.
 
 ## Backend data persistence (Docker)
 
@@ -170,19 +170,18 @@ Inputs:
 - `build_ipa` (default `false`)
 - `enable_8x11` (default `false`) to opt-in to showing `8x11` in the mobile UI
 - `api_base_url` controls `PHOTOBOOTH_API_BASE` injection used by the mobile web bundle.
-- `fs_directory` (default `DOCUMENTS`) — Capacitor Filesystem directory for on-device saves.
-- `save_path_originals` / `save_path_finals` — relative paths under that directory (e.g. point finals at a folder you sync with Syncthing).
+- `fs_directory` (default `EXTERNAL_STORAGE`) — use with `save_path` `Download` for a user-visible Syncthing path.
+- `save_path` (default `Download`) — parent only; the app adds `PhotoBooth_YYYYMMDD` inside it.
 
 Repository variables (optional defaults when running the workflow):
-- `PHOTOBOOTH_API_BASE`, `PHOTOBOOTH_ENABLE_8X11`, `PHOTOBOOTH_FS_DIRECTORY`, `PHOTOBOOTH_SAVE_PATH_ORIGINALS`, `PHOTOBOOTH_SAVE_PATH_FINALS`
+- `PHOTOBOOTH_API_BASE`, `PHOTOBOOTH_ENABLE_8X11`, `PHOTOBOOTH_FS_DIRECTORY`, `PHOTOBOOTH_SAVE_PATH`
 
 Local `prepare-www` example:
 
 ```bash
 cd apps/mobile
-PHOTOBOOTH_FS_DIRECTORY=DOCUMENTS \
-PHOTOBOOTH_SAVE_PATH_ORIGINALS=DCIM/photobooth/camera \
-PHOTOBOOTH_SAVE_PATH_FINALS=DCIM/photobooth/print_queue \
+PHOTOBOOTH_FS_DIRECTORY=EXTERNAL_STORAGE \
+PHOTOBOOTH_SAVE_PATH=Download \
 PHOTOBOOTH_API_BASE=http://192.168.1.10:8000 \
 npm run prepare-www
 ```
