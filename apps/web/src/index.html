@@ -175,7 +175,7 @@
     <div class="wrap">
       <h1>Photo Booth</h1>
       <p class="muted" id="appTagline">
-        <strong>Pose (before photo)</strong> — pick <strong>5 s</strong> or <strong>10 s</strong> (or Immediate), then tap <strong>Capture + Preview</strong>; you’ll see a big countdown on the <strong>live camera</strong> before the snapshot.
+        Tap <strong>Capture + Preview</strong> — a <strong>10 s</strong> countdown runs on the <strong>live camera</strong> so guests can pose, then the snapshot is taken (same for <strong>Capture again</strong>).
         <strong>Rear mode:</strong> after the photo, a separate <strong>auto-print</strong> countdown runs (default 10 s) — that is not the pose timer.
         Use <strong>Capture again</strong> above the preview to retake.
       </p>
@@ -198,15 +198,6 @@
           <select id="sizeSelect"></select>
           <span class="pill">Orientation</span>
           <select id="orientationSelect"></select>
-          <span class="pill" id="captureTimerLabel">Pose (before photo)</span>
-          <select
-            id="captureTimerSelect"
-            title="Wait time on the live camera before the snapshot (not the print delay after the photo)"
-          >
-            <option value="5" selected>5 s — then snap</option>
-            <option value="10">10 s — then snap</option>
-            <option value="0">Immediate (no wait)</option>
-          </select>
           <button id="startCameraBtn" class="secondary">Start Camera</button>
           <button id="stopCameraBtn" class="secondary">Stop Camera</button>
           <button id="captureBtn" class="primary">Capture + Preview</button>
@@ -282,9 +273,11 @@
         Number(window.PHOTOBOOTH_REAR_PRINT_DELAY_MS) > 0
           ? Number(window.PHOTOBOOTH_REAR_PRINT_DELAY_MS)
           : 10000;
+      /** Default pose countdown on the live camera before snapshot (no dropdown). */
+      const DEFAULT_POSE_COUNTDOWN_SEC = 10;
       /**
-       * Pre-capture countdown (seconds, 0–60). Inject via prepare-www: PHOTOBOOTH_CAPTURE_COUNTDOWN_SEC.
-       * When unset, the Timer dropdown (Off / 5s / 10s) in the UI is used.
+       * Optional override via prepare-www: PHOTOBOOTH_CAPTURE_COUNTDOWN_SEC (0–60, or 0 to disable pose wait).
+       * When unset, DEFAULT_POSE_COUNTDOWN_SEC is used.
        */
       const rawCaptureCountdown = window.PHOTOBOOTH_CAPTURE_COUNTDOWN_SEC;
       const CAPTURE_COUNTDOWN_LOCKED =
@@ -389,8 +382,6 @@
       const startCameraBtn = document.getElementById("startCameraBtn");
       const stopCameraBtn = document.getElementById("stopCameraBtn");
       const captureBtn = document.getElementById("captureBtn");
-      const captureTimerSelect = document.getElementById("captureTimerSelect");
-      const captureTimerLabel = document.getElementById("captureTimerLabel");
       const finalFormat = document.getElementById("finalFormat");
       const prepareFinalBtn = document.getElementById("prepareFinalBtn");
       const printBtn = document.getElementById("printBtn");
@@ -648,17 +639,10 @@
       function getCaptureCountdownSeconds() {
         if (CAPTURE_COUNTDOWN_LOCKED) {
           const n = Number(rawCaptureCountdown);
-          if (!Number.isFinite(n)) return 5;
+          if (!Number.isFinite(n)) return DEFAULT_POSE_COUNTDOWN_SEC;
           return Math.min(60, Math.max(0, Math.round(n)));
         }
-        if (!captureTimerSelect) {
-          // Stale mobile bundle without Timer control: still give guests time to pose (critical for booth).
-          return typeof isMobileDevice === "function" && (isMobileDevice() || isCapacitorNative())
-            ? 5
-            : 0;
-        }
-        const v = Number(captureTimerSelect.value);
-        return Number.isFinite(v) ? Math.min(60, Math.max(0, v)) : 0;
+        return DEFAULT_POSE_COUNTDOWN_SEC;
       }
 
       /** Big countdown ON THE LIVE CAMERA before canvas snapshot (not the rear auto-print delay). */
@@ -1577,8 +1561,8 @@
           connectivityDebug: CONNECTIVITY_DEBUG,
           enable8x11: ENABLE_8X11,
           rearAutoPrintDelayMs: REAR_AUTO_PRINT_DELAY_MS,
-          captureCountdownSec: getCaptureCountdownSeconds(),
-          captureCountdownUiLocked: CAPTURE_COUNTDOWN_LOCKED,
+          poseCountdownSec: getCaptureCountdownSeconds(),
+          poseCountdownInjected: CAPTURE_COUNTDOWN_LOCKED,
           suppressRearBrowserPrint: SUPPRESS_REAR_BROWSER_PRINT,
           online: navigator.onLine,
           fsDirectory: FS_DIRECTORY,
@@ -1607,14 +1591,6 @@
         try {
           if (serverOk) {
             await loadOptions();
-            if (CAPTURE_COUNTDOWN_LOCKED) {
-              const n = getCaptureCountdownSeconds();
-              if (captureTimerSelect) {
-                captureTimerSelect.value = String(n);
-                captureTimerSelect.style.display = "none";
-              }
-              if (captureTimerLabel) captureTimerLabel.style.display = "none";
-            }
             applyCameraModeUI();
             updatePreviewRatio();
             await loadFrames(false);

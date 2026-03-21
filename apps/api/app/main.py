@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +12,12 @@ import re
 from uuid import uuid4
 
 logger = logging.getLogger("photo_booth.api")
+
+
+def _console_log(msg: str) -> None:
+    """Always visible in the run-api-standalone / uvicorn terminal (stderr)."""
+    print(f"[photo-booth] {msg}", flush=True, file=sys.stderr)
+
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +27,23 @@ from pydantic import BaseModel, Field
 from .services.compositor import PRINT_PRESETS, compose_image, get_canvas_config
 
 app = FastAPI(title="Photo Booth API", version="0.1.0")
+
+
+@app.on_event("startup")
+def _startup_log_copy_targets() -> None:
+    """So you can confirm env is loaded before the first /compose/final."""
+    if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE"):
+        qdir = Path(os.getenv("PHOTOBOOTH_PRINT_QUEUE_DIR", str(DATA_DIR / "print-queue"))).expanduser().resolve()
+        _console_log(f"print-queue copy ON → {qdir}")
+    if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_DROPZONE"):
+        dz_raw = (os.getenv("PHOTOBOOTH_DROPZONE_DIR") or "").strip()
+        if dz_raw:
+            dz = Path(dz_raw).expanduser().resolve()
+            _console_log(f"dropzone copy ON → {dz}")
+        else:
+            _console_log("WARNING: PHOTOBOOTH_COPY_FINAL_TO_DROPZONE=1 but PHOTOBOOTH_DROPZONE_DIR is empty")
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -502,8 +526,10 @@ def _compose_final_body(payload: FinalCreate) -> dict:
             dest = qdir / f"{final_path.stem}_{uuid4().hex[:8]}{final_path.suffix}"
             shutil.copy2(final_path, dest)
             logger.info("print-queue: copied final to %s", dest)
+            _console_log(f"print-queue OK: copied → {dest}")
         except OSError as e:
             logger.warning("print-queue copy skipped: %s", e)
+            _console_log(f"print-queue FAILED: {e}")
 
     # Optional: copy final to an external folder watched by another printer utility (in addition to print-queue).
     if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_DROPZONE"):
@@ -512,6 +538,7 @@ def _compose_final_body(payload: FinalCreate) -> dict:
             logger.warning(
                 "PHOTOBOOTH_COPY_FINAL_TO_DROPZONE is set but PHOTOBOOTH_DROPZONE_DIR is empty — skipping dropzone copy"
             )
+            _console_log("dropzone SKIPPED: PHOTOBOOTH_DROPZONE_DIR is empty (check .env.standalone)")
         else:
             try:
                 dz = Path(dz_raw).expanduser().resolve()
@@ -519,8 +546,10 @@ def _compose_final_body(payload: FinalCreate) -> dict:
                 dest = dz / f"{final_path.stem}_{uuid4().hex[:8]}{final_path.suffix}"
                 shutil.copy2(final_path, dest)
                 logger.info("dropzone: copied final to %s", dest)
+                _console_log(f"dropzone OK: copied → {dest}")
             except OSError as e:
                 logger.warning("dropzone copy skipped: %s", e)
+                _console_log(f"dropzone FAILED: {e} (check path exists, Drive synced, permissions)")
 
     final_url = (
         f"/finals/{session_folder}/{final_path.name}"
