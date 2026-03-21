@@ -1,0 +1,64 @@
+================================================================================
+  PHOTO BOOTH — SIMPLE START / STOP (read this once)
+================================================================================
+
+WINDOWS
+-------
+START (every time you run the event)
+  • Double-click:  scripts\run-api-standalone.bat
+  • Leave the black window OPEN while the booth is in use.
+
+STOP (normal)
+  • Click the window and press Ctrl+C
+  • Or close the window.
+
+IF IT FREEZES, WON'T START, OR PORT ERRORS
+  • Double-click:  scripts\restart-photo-booth-standalone.bat
+    (force-stops this booth, then starts clean)
+
+  OR in two steps:
+  • Double-click:  scripts\stop-photo-booth-standalone.bat
+  • Then double-click:  scripts\run-api-standalone.bat
+
+TEST THE PHONE BEFORE THE APP
+  • When the server starts, note the line:  LAN: http://192.168.x.x:PORT
+  • On the phone browser, open:  that same URL with /health on the end
+    Example:  http://192.168.1.50:8003/health
+  • You should see text like "status" and "ok". Same address goes in the app.
+
+MOBILE APP (APK) — STOP / RESTART WILL NOT FORCE A NEW BUILD
+  • Restarting the booth does NOT give this PC a new Wi-Fi IP. Your phone URL stays the same
+    unless you change Wi-Fi networks or the router assigns a new IP (unusual during one event).
+  • The PORT number might change between runs if the default port was busy (8001 → 8002…).
+    To always use the SAME port as in your app build, add to .env.standalone:
+      API_PORT=8001
+      PHOTOBOOTH_STRICT_PORT=1
+    (Use the port you put in PHOTOBOOTH_API_BASE when you built the app.)
+  • If strict mode says the port is busy, run stop-photo-booth-standalone, then start again —
+    still no need to rebuild the app if IP + port match.
+
+PRINTER
+  • Put the exact printer name in .env.standalone (copy from .env.standalone.example)
+  • List names:  powershell -File scripts\list-printers.ps1
+
+More detail:  scripts\README-WINDOWS-STANDALONE.txt
+
+
+MAC / LINUX
+-----------
+START
+  • In Terminal, cd to the photo-booth folder, then:
+      chmod +x scripts/*.sh
+      ./scripts/run-api-standalone.sh
+
+STOP
+  • Ctrl+C in that terminal
+
+RESTART IF STUCK
+      ./scripts/restart-photo-booth-standalone.sh
+
+  OR
+      ./scripts/stop-photo-booth-standalone.sh
+      ./scripts/run-api-standalone.sh
+
+================================================================================

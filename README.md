@@ -17,7 +17,7 @@ Consumer-friendly photo booth platform for phone/tablet capture, frame overlays,
 - `shared/frames`: Frame packs and metadata (`meta.json`) by print size.
 - `data`: Runtime storage when using **Docker** backend (host-mounted).
 - `data-standalone`: Optional runtime storage for **standalone** uvicorn (default; gitignored) when running beside Docker.
-- `scripts/`: **`run-api-standalone.sh`** / **`.bat`** — self-contained **Python 3.10+**, **`.venv`**, **`apps/api/requirements.txt`**, API on **`0.0.0.0`** (port **8001** or next free). Optional **`setup-standalone-venv.*`** = venv only. **Windows:** **`scripts/README-WINDOWS-STANDALONE.txt`** (plain-text cheat sheet).
+- `scripts/`: **`run-api-standalone.sh`** / **`.bat`** — self-contained **Python 3.10+**, **`.venv`**, **`apps/api/requirements.txt`**, API on **`0.0.0.0`** (port **8001** or next free). **End-user help:** **`scripts/PHOTO-BOOTH-END-USER-START.txt`**. **Force stop / restart:** **`stop-photo-booth-standalone.*`** and **`restart-photo-booth-standalone.*`** (this repo only). Optional **`setup-standalone-venv.*`** = venv only. **Windows:** **`scripts/README-WINDOWS-STANDALONE.txt`** (plain-text cheat sheet).
   - **Printer / folder watcher:** one run of **`run-api-standalone.sh`** / **`.bat`** starts the API and **`scripts/photo_booth_standalone.py`**, which starts **`print_watcher.py`** when **`PHOTOBOOTH_PRINTER_NAME`** is set in **`.env.standalone`** (no separate script). **`PHOTOBOOTH_ENABLE_PRINT_WATCHER=0`** turns printing off. Stopping the API (**Ctrl+C**) stops the watcher on **Mac, Linux, and Windows**. Optional **`PHOTOBOOTH_PRINT_WATCH_MODE=queue`** + **`PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE=1`** uses **`print-queue` → print → `print-archive`** (see **Print queue + archive**). Discover names: **`scripts/list-printers.sh`** / **`list-printers.ps1`**.
 - **`scripts/run-print-watcher.*`**: run the watcher **alone** (e.g. Docker host where the API is only in a container).
 
@@ -66,6 +66,8 @@ PHOTOBOOTH_PRINTER_NAME="EPSON L3250 Series" ./scripts/run-api-standalone.sh
 
 If you still need to free a port manually: **macOS/Linux** `lsof -nP -iTCP:8001` then `kill <pid>` (or `kill -9 <pid>`). **Windows** `netstat -ano | findstr :8001` then `taskkill /PID <pid> /F`.
 
+**Stuck server / frozen window / “port in use” after a crash:** run **`./scripts/stop-photo-booth-standalone.sh`** (Mac/Linux) or **`scripts\stop-photo-booth-standalone.bat`** (Windows), then start again. One step: **`./scripts/restart-photo-booth-standalone.sh`** or **`scripts\restart-photo-booth-standalone.bat`**.
+
 **LAN IP for mobile:** the script prints **`http://<lan-ip>:<port>`** at startup. In another terminal: `python scripts/standalone_preflight.py lan-ip`.
 
 ### Windows (Command Prompt or PowerShell)
@@ -78,6 +80,8 @@ If you still need to free a port manually: **macOS/Linux** `lsof -nP -iTCP:8001`
    scripts\run-api-standalone.bat
    ```
 3. When the server starts, copy the **`LAN:`** line (e.g. `http://192.168.1.50:8002`). Put that full URL into **`PHOTOBOOTH_API_BASE`** when you build/configure the mobile app. The phone must be on the **same Wi‑Fi** as the PC. **Do not use `127.0.0.1` on the phone** — that points at the phone itself.
+
+**Non-technical operators:** open **`scripts/PHOTO-BOOTH-END-USER-START.txt`**. The start script also prints short instructions. If anything is stuck, run **`scripts\restart-photo-booth-standalone.bat`** (or **`stop`** then **`run`** again).
 
 **Port 8001 — you usually do not need to fix anything**
 
@@ -137,6 +141,8 @@ PHOTOBOOTH_API_BASE=http://192.168.12.34:8001 npm run prepare-www && npx cap syn
 ```
 
 Install the matching APK for whichever server you started. **One APK** only talks to **one** base URL unless you add a future in-app setting.
+
+**Stop/restart and the APK:** Restarting the standalone server **does not** change the PC’s **LAN IP**, so you normally **do not** rebuild the app. The **port** can change if the server auto-picks 8002+ when 8001 is busy — to keep **`PHOTOBOOTH_API_BASE`** stable, set **`API_PORT`** and **`PHOTOBOOTH_STRICT_PORT=1`** in **`.env.standalone`** (see **`.env.standalone.example`**). If strict mode fails, run **`stop-photo-booth-standalone`** then start again.
 
 **Phone cannot reach a Windows PC on port 8001 (or 8002+):**
 

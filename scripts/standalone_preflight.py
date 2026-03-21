@@ -16,20 +16,49 @@ import socket
 import subprocess
 import sys
 
+# Avoid spamming the same Windows 10013 help line for every port in the scan.
+_win32_bind_denied_hint_shown = False
+
 
 def _strict_port() -> bool:
     v = (os.environ.get("PHOTOBOOTH_STRICT_PORT") or "").strip().lower()
     return v in ("1", "true", "yes", "on")
 
 
+def _port_bind_failed_reason(port: int, e: OSError) -> str:
+    """Short hint for stderr when bind fails on Windows."""
+    winerr = getattr(e, "winerror", None)
+    if sys.platform == "win32" and winerr == 10013:
+        return (
+            f"Port {port}: Windows blocked bind (WinError 10013). "
+            f"Common causes: port inside an excluded range (Hyper-V / WSL / Docker), or security software. "
+            f"Try:  set API_PORT=18080  before starting, or run in an elevated cmd once to inspect exclusions. "
+            f"Check:  netsh interface ipv4 show excludedportrange protocol=tcp"
+        )
+    return str(e)
+
+
 def _port_busy(port: int) -> bool:
+    """
+    True if we cannot listen on this port (in use, or bind forbidden).
+    On Windows, WinError 10013 often means the port is in a reserved/excluded range
+    — treat as 'busy' so resolve-port can try 8002, 8003, … instead of crashing.
+    """
+    global _win32_bind_denied_hint_shown
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         s.bind(("0.0.0.0", port))
         return False
     except OSError as e:
-        if e.errno == errno.EADDRINUSE or getattr(e, "winerror", None) == 10048:
+        winerr = getattr(e, "winerror", None)
+        if e.errno == errno.EADDRINUSE or winerr == 10048:
+            return True
+        # Windows: permission / policy / excluded port range (not always "in use")
+        if winerr == 10013 or e.errno == errno.EACCES:
+            if sys.platform == "win32" and not _win32_bind_denied_hint_shown:
+                print(_port_bind_failed_reason(port, e), file=sys.stderr)
+                _win32_bind_denied_hint_shown = True
             return True
         raise
     finally:
@@ -79,6 +108,13 @@ def _print_kill_help(port: int) -> None:
         print(f'  1) Re-run without strict mode (default): we pick the next free port (8002, 8003, …).', file=sys.stderr)
         print(f"  2) Stop the other program: netstat -ano | findstr \":{port}\"  then  taskkill /PID <pid> /F", file=sys.stderr)
         print(f"  3) Use another port:  set API_PORT=8002", file=sys.stderr)
+        print(
+            "  4) WinError 10013 (permission on bind): port may be in a Windows excluded range "
+            "(Hyper-V / WSL / Docker). Run:",
+            file=sys.stderr,
+        )
+        print("       netsh interface ipv4 show excludedportrange protocol=tcp", file=sys.stderr)
+        print("     Or pick a high port:  set API_PORT=18080", file=sys.stderr)
         try:
             out = subprocess.run(
                 [
@@ -140,9 +176,15 @@ def _resolve_port(preferred: int, span: int = 25) -> tuple[int, bool]:
             return p, p != preferred
     print(
         f"No free TCP port between {preferred} and {preferred + span - 1}. "
-        f"Close other apps or set API_PORT to a higher base.",
+        f"Close other apps or set API_PORT to a higher base (e.g. 18080).",
         file=sys.stderr,
     )
+    if sys.platform == "win32":
+        print(
+            "Windows tip: WinError 10013 often means Hyper-V/WSL reserved a port range. "
+            "Run:  netsh interface ipv4 show excludedportrange protocol=tcp",
+            file=sys.stderr,
+        )
     raise SystemExit(1)
 
 
@@ -217,7 +259,7 @@ def main() -> int:
         port, fallback = _resolve_port(preferred, span)
         if fallback:
             print(
-                f"Note: port {preferred} was busy — using {port} instead. "
+                f"Note: port {preferred} was unavailable (in use or Windows blocked bind) — using {port} instead. "
                 f"(Phone URL must use :{port}. Strict fixed port: PHOTOBOOTH_STRICT_PORT=1.)",
                 file=sys.stderr,
             )

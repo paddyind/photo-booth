@@ -13,6 +13,34 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+cat <<'EOS'
+
+============================================================
+  PHOTO BOOTH — STANDALONE SERVER (keep this terminal open)
+============================================================
+
+  NORMAL USE
+  ------------
+  • Leave this terminal open while guests use the booth.
+  • To stop: press Ctrl+C in this window.
+
+  IF SOMETHING IS STUCK OR WON'T START
+  ------------------------------------
+  1) Run:  ./scripts/stop-photo-booth-standalone.sh
+     (force-stops this booth's API + print watcher)
+  2) Then run:  ./scripts/run-api-standalone.sh  again.
+
+  OR one step:
+     ./scripts/restart-photo-booth-standalone.sh
+
+  TEST PHONE: open the LAN URL printed below + /health in Safari/Chrome
+  MOBILE APK: stop/restart does not change this Mac's Wi-Fi IP. Pin the port with
+    API_PORT=… and PHOTOBOOTH_STRICT_PORT=1 in .env.standalone so the URL matches your build.
+
+============================================================
+
+EOS
+
 if [[ -f "$ROOT/.env.standalone" ]]; then
   echo "Loading $ROOT/.env.standalone …"
   set -a

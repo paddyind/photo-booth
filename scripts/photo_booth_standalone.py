@@ -99,6 +99,25 @@ def _print_startup_banner(port: int, lan: str) -> None:
         print("  LAN: (not auto-detected — use this PC's Wi-Fi IPv4 from Settings / ipconfig)", flush=True)
         base = f"http://<THIS_PC_LAN_IP>:{port}"
     print("", flush=True)
+    strict = (os.environ.get("PHOTOBOOTH_STRICT_PORT") or "").strip().lower() in ("1", "true", "yes", "on")
+    print(sep, flush=True)
+    print("  MOBILE APP URL — stop/restart does NOT change this PC's Wi-Fi IP", flush=True)
+    print(sep, flush=True)
+    print("  • You do NOT need to rebuild the APK just because you stopped or restarted the server.", flush=True)
+    print("  • The Wi-Fi IP (LAN line above) stays the same unless you change networks or DHCP gives a new one.", flush=True)
+    if strict:
+        print(
+            f"  • Port is PINNED (PHOTOBOOTH_STRICT_PORT=1) — PHOTOBOOTH_API_BASE should stay http://{lan or '<LAN-IP>'}:{port}",
+            flush=True,
+        )
+    else:
+        print(
+            "  • Port can change if this one was busy last time (8001→8002…). To match your APK forever, set in .env.standalone:",
+            flush=True,
+        )
+        print("      API_PORT=<same as your app>  and  PHOTOBOOTH_STRICT_PORT=1", flush=True)
+        print("    If start fails, run stop-photo-booth-standalone then start again (IP unchanged).", flush=True)
+    print("", flush=True)
     print(sep, flush=True)
     print("  PHONE / TABLET — check connectivity (before relying on the app)", flush=True)
     print(sep, flush=True)
@@ -128,6 +147,25 @@ def _print_startup_banner(port: int, lan: str) -> None:
     print("  • macOS/Linux:  ./scripts/list-printers.sh   (or: lpstat -p)", flush=True)
     print("  • Windows:      powershell -File scripts/list-printers.ps1", flush=True)
     print("  Auto-print uses scripts/print_watcher.py (CUPS `lp` on Mac, GDI on Windows).", flush=True)
+    print("", flush=True)
+    print(sep, flush=True)
+    print("  IF SOMETHING IS STUCK — NO TECH SUPPORT NEEDED", flush=True)
+    print(sep, flush=True)
+    if sys.platform == "win32":
+        print("  • Stop everything for this booth:", flush=True)
+        print("      scripts\\stop-photo-booth-standalone.bat", flush=True)
+        print("    Then start again:", flush=True)
+        print("      scripts\\run-api-standalone.bat", flush=True)
+        print("  • Or one double-click:", flush=True)
+        print("      scripts\\restart-photo-booth-standalone.bat", flush=True)
+    else:
+        print("  • Stop:", flush=True)
+        print("      ./scripts/stop-photo-booth-standalone.sh", flush=True)
+        print("  • Start again:", flush=True)
+        print("      ./scripts/run-api-standalone.sh", flush=True)
+        print("  • Or:", flush=True)
+        print("      ./scripts/restart-photo-booth-standalone.sh", flush=True)
+    print("  • This only affects Photo Booth in this folder — other apps are left alone.", flush=True)
     print("", flush=True)
     print(sep, flush=True)
     print("  DATA", flush=True)

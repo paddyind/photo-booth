@@ -20,6 +20,33 @@ REM ========================================================================
 
 cd /d "%~dp0.."
 
+echo.
+echo ============================================================
+echo   PHOTO BOOTH — STANDALONE SERVER (keep this window open)
+echo ============================================================
+echo.
+echo   NORMAL USE
+echo   --------
+echo   * Leave this window open while guests use the booth.
+echo   * To stop: press Ctrl+C, or close this window.
+echo.
+echo   IF SOMETHING IS STUCK OR WON'T START
+echo   ------------------------------------
+echo   1) Double-click:  scripts\stop-photo-booth-standalone.bat
+echo      ^(force-stops this booth's server and printer helper^)
+echo   2) Then double-click:  scripts\run-api-standalone.bat  again.
+echo.
+echo   OR one step:  scripts\restart-photo-booth-standalone.bat
+echo      ^(stop everything for this folder, then start again^)
+echo.
+echo   TEST PHONE: use the LAN URL printed below + /health in the browser
+echo   MOBILE APK: stop/restart does NOT change this PC's Wi-Fi IP.
+echo   Pin port in .env.standalone: API_PORT=8001 and PHOTOBOOTH_STRICT_PORT=1
+echo   ^(then your baked PHOTOBOOTH_API_BASE stays valid^) — see .env.standalone.example
+echo   More help:  scripts\README-WINDOWS-STANDALONE.txt
+echo ============================================================
+echo.
+
 if exist ".env.standalone" (
   echo Loading .env.standalone …
   powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0load-dotenv-standalone.ps1" "%CD%\.env.standalone"
