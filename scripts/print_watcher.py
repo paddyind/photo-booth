@@ -291,7 +291,7 @@ class QueuePrintHandler(FileSystemEventHandler):
 
     def _schedule(self, path: str) -> None:
         p = Path(path)
-        if not _in_queue(p) or not _is_printable_ext(p):
+        if not self._in_queue(p) or not _is_printable_ext(p):
             return
         key = str(p.resolve())
         with self._lock:

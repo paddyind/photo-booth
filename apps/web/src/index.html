@@ -169,16 +169,22 @@
         font-weight: 500;
         color: #9ad;
       }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <h1>Photo Booth</h1>
-      <p class="muted" id="appTagline">
-        Tap <strong>Capture + Preview</strong> — a <strong>10 s</strong> countdown runs on the <strong>live camera</strong> so guests can pose, then the snapshot is taken (same for <strong>Capture again</strong>).
-        <strong>Rear mode:</strong> after the photo, a separate <strong>auto-print</strong> countdown runs (default 10 s) — that is not the pose timer.
-        Use <strong>Capture again</strong> above the preview to retake.
-      </p>
+      <h1 class="visually-hidden">Photo Booth</h1>
 
       <div class="card">
         <div class="video-stage">
@@ -189,8 +195,8 @@
         <div class="row">
           <span class="pill">Camera</span>
           <select id="cameraModeSelect">
+            <option value="rear" selected>Rear (fixed 4x6)</option>
             <option value="front">Front (interactive)</option>
-            <option value="rear">Rear (fixed 4x6)</option>
           </select>
           <span class="pill">Name</span>
           <input id="nameInput" type="text" placeholder="Enter name (optional)" style="padding:10px 14px;border-radius:8px;border:0;min-width:180px;" />
@@ -658,13 +664,9 @@
               setStatus("Capture cancelled (camera stopped).", true);
               return false;
             }
-            overlay.innerHTML =
-              `<div class="capture-countdown-sub">Get ready — snapshot in</div>` +
-              `<div class="capture-countdown-num">${left}</div>`;
+            overlay.innerHTML = `<div class="capture-countdown-num">${left}</div>`;
             setStatus(
-              DEBUG_MODE
-                ? `Pose timer: ${left}s left (then snapshot on live camera)`
-                : `Get ready — snapshot in ${left}s…`
+              DEBUG_MODE ? `Pose timer: ${left}s left (then snapshot on live camera)` : ""
             );
             if (isRearMode() && rearPrintCountdown && previewCard.style.display !== "none") {
               rearPrintCountdown.classList.add("idle");
@@ -1065,7 +1067,7 @@
 
       function applyCameraModeUI() {
         if (!isMobileDevice()) {
-          cameraModeSelect.value = "front";
+          cameraModeSelect.value = "rear";
           cameraModeSelect.disabled = true;
         }
         if (isRearMode()) {

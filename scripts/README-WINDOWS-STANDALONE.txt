@@ -2,6 +2,19 @@
   Photo Booth — Standalone API on Windows (run-api-standalone.bat)
 ================================================================================
 
+TWO-PART SETUP — PHONE APP + LAPTOP (NO EXTRA STARTUP SCRIPTS)
+  • You do NOT merge these into one installer. They stay separate on purpose:
+      (1) Phone or tablet: install the Photo Booth APK (built with PHOTOBOOTH_API_BASE = this PC’s LAN URL).
+      (2) Laptop: clone/open the repo and run  scripts\run-api-standalone.bat  — same script as always.
+  • The phone only talks to the API over Wi‑Fi. The PRINTER is used by the LAPTOP: install the
+    printer in Windows on that machine, then set PHOTOBOOTH_PRINTER_NAME in .env.standalone to the
+    exact queue name (see scripts\list-printers.ps1). Nothing on the phone connects to the printer.
+  • For folder-based printing (recommended with the mobile “suppress browser print” build), use
+    queue mode in .env.standalone: PHOTOBOOTH_PRINT_WATCH_MODE=queue and
+    PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE=1 — the API copies finals to DATA_DIR\print-queue and
+    print_watcher prints them. Start order: run run-api-standalone.bat first (or restart it after
+    changing .env.standalone); the app on the phone can be opened anytime after /health works.
+
 WHERE TO RUN
   • Open Command Prompt (cmd) or PowerShell.
   • cd to the photo-booth folder (the one that contains "apps" and "scripts").

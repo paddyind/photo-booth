@@ -127,6 +127,8 @@ No internet required; phones only need the same Wi‑Fi / hotspot as the compute
 
 The app’s API URL is baked in at **`prepare-www`** / CI time (`PHOTOBOOTH_API_BASE`).
 
+**Full booth build (LAN URL + physical printer, no browser print tab):** see **`apps/mobile/BUILD.md`** — copy **`apps/mobile/env.build.example` → `env.build`**, set **`PHOTOBOOTH_API_BASE`**, then run **`build-booth.sh`** (Mac/Linux) or **`build-booth.bat`** (Windows).
+
 - **Docker backend:** `http://<your-pc-LAN-ip>:8000`
 - **Standalone backend:** `http://<your-pc-LAN-ip>:8001` (or your **`API_PORT`**) — default behavior **pins** that port by clearing listeners. Only use **8002+** if you opted into **`PHOTOBOOTH_PORT_FALLBACK=1`** and the console shows a different port.
 

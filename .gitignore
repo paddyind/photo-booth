@@ -30,3 +30,4 @@ apps/mobile/ios/
 apps/mobile/node_modules/
 apps/mobile/www/*
 !apps/mobile/www/.gitkeep
+apps/mobile/env.build

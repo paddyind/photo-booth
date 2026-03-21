@@ -37,6 +37,8 @@ echo.
 echo   OR one step:  scripts\restart-photo-booth-standalone.bat
 echo      ^(stop everything for this folder, then start again^)
 echo.
+echo   PHONE APP + THIS LAPTOP are separate: install APK on the phone; run THIS script on the PC.
+echo   Printer connects to WINDOWS on this laptop - set PHOTOBOOTH_PRINTER_NAME in .env.standalone.
 echo   TEST PHONE: use the LAN URL printed below + /health in the browser
 echo   MOBILE APK: stop/restart does NOT change this PC's Wi-Fi IP.
 echo   Default: server always uses API_PORT ^(8001^) — busy ports are cleared, not skipped.
