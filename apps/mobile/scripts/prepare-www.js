@@ -15,8 +15,25 @@ const enable8x11Raw = (process.env.PHOTOBOOTH_ENABLE_8X11 || "").toLowerCase();
 const enable8x11 =
   ["1", "true", "yes", "y", "on"].includes(enable8x11Raw) && hasEnable8x11Env;
 
+const rearDelayRaw = process.env.PHOTOBOOTH_REAR_PRINT_DELAY_MS;
+const hasRearDelayEnv = Object.prototype.hasOwnProperty.call(
+  process.env,
+  "PHOTOBOOTH_REAR_PRINT_DELAY_MS"
+);
+const rearDelayMs =
+  hasRearDelayEnv && String(rearDelayRaw || "").trim() !== ""
+    ? Number(rearDelayRaw)
+    : null;
+
+const suppressRearBrowserRaw = (
+  process.env.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT || ""
+).toLowerCase();
+const suppressRearBrowserPrint = ["1", "true", "yes", "y", "on"].includes(
+  suppressRearBrowserRaw
+);
+
 // Mobile save: PHOTOBOOTH_SAVE_PATH = parent under fs_directory (e.g. Download, Documents).
-// App always appends a persisted dated folder PhotoBooth_YYYYMMDD for originals + finals.
+// App always appends a persisted dated folder PhotoBooth_DDMMYYYY for originals + finals.
 const fsDirectory = process.env.PHOTOBOOTH_FS_DIRECTORY || "EXTERNAL_STORAGE";
 const hasSavePathEnv = Object.prototype.hasOwnProperty.call(
   process.env,
@@ -48,6 +65,36 @@ if (apiBase.trim()) {
 if (hasEnable8x11Env) {
   // Opt-in to showing 8x11 in the UI (default is hidden).
   scriptTagParts.push(`window.PHOTOBOOTH_ENABLE_8X11=${enable8x11 ? "true" : "false"};`);
+}
+
+if (hasRearDelayEnv && rearDelayMs != null && !Number.isNaN(rearDelayMs) && rearDelayMs > 0) {
+  scriptTagParts.push(`window.PHOTOBOOTH_REAR_PRINT_DELAY_MS=${JSON.stringify(rearDelayMs)};`);
+}
+if (suppressRearBrowserPrint) {
+  scriptTagParts.push(`window.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT=true;`);
+}
+
+const hasDebugEnv = Object.prototype.hasOwnProperty.call(process.env, "PHOTOBOOTH_DEBUG");
+const debugOn =
+  hasDebugEnv &&
+  ["1", "true", "yes", "y", "on"].includes(
+    String(process.env.PHOTOBOOTH_DEBUG || "").toLowerCase()
+  );
+if (hasDebugEnv) {
+  scriptTagParts.push(`window.PHOTOBOOTH_DEBUG=${debugOn ? "true" : "false"};`);
+}
+
+const hasShowCleanupEnv = Object.prototype.hasOwnProperty.call(
+  process.env,
+  "PHOTOBOOTH_SHOW_CLEANUP"
+);
+const showCleanupOn =
+  hasShowCleanupEnv &&
+  ["1", "true", "yes", "y", "on"].includes(
+    String(process.env.PHOTOBOOTH_SHOW_CLEANUP || "").toLowerCase()
+  );
+if (hasShowCleanupEnv) {
+  scriptTagParts.push(`window.PHOTOBOOTH_SHOW_CLEANUP=${showCleanupOn ? "true" : "false"};`);
 }
 
 // Always inject save paths for mobile www (defaults align with apps/web/src/index.html).

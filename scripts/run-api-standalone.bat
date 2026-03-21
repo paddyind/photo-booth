@@ -1,8 +1,23 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 REM Photo Booth API on the host (no Docker). Default port 8001.
 REM Self-contained on Windows: Python 3.10+, .venv, deps, then uvicorn.
+REM
+REM Optional printer / folder watcher (same window):
+REM   Copy .env.standalone.example to .env.standalone in the repo root and set:
+REM     PHOTOBOOTH_ENABLE_PRINT_WATCHER=1
+REM     PHOTOBOOTH_PRINTER_NAME=Your Printer Name
+REM     PHOTOBOOTH_DATA_DIR=...   (optional; defaults to DATA_DIR)
+REM Or set those variables before running this script.
+REM
+REM For GDI printing on Windows, pywin32 is installed automatically when the watcher is enabled.
+
 cd /d "%~dp0.."
+
+if exist ".env.standalone" (
+  echo Loading .env.standalone …
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0load-dotenv-standalone.ps1" "%CD%\.env.standalone"
+)
 
 if not exist "apps\api\requirements.txt" (
   echo Missing apps\api\requirements.txt — run from the photo-booth repo folder.
@@ -33,6 +48,7 @@ set "PYTHONPATH=%CD%"
 if not defined DATA_DIR set "DATA_DIR=%CD%\data-standalone"
 if not defined FRAMES_DIR set "FRAMES_DIR=%CD%\shared\frames"
 if not defined API_PORT set "API_PORT=8001"
+if not defined PHOTOBOOTH_DATA_DIR set "PHOTOBOOTH_DATA_DIR=%DATA_DIR%"
 
 call .venv\Scripts\activate.bat
 
@@ -48,6 +64,28 @@ python -c "import uvicorn" 2>nul
 if errorlevel 1 (
   echo uvicorn missing after install. Try: rmdir /s /q .venv ^&^& run this script again
   exit /b 1
+)
+
+set "_PW=0"
+if /i "%PHOTOBOOTH_ENABLE_PRINT_WATCHER%"=="1" set "_PW=1"
+if /i "%PHOTOBOOTH_ENABLE_PRINT_WATCHER%"=="true" set "_PW=1"
+if /i "%PHOTOBOOTH_ENABLE_PRINT_WATCHER%"=="yes" set "_PW=1"
+if /i "%PHOTOBOOTH_ENABLE_PRINT_WATCHER%"=="on" set "_PW=1"
+
+if "%_PW%"=="1" (
+  echo Syncing print-watcher dependencies …
+  python -m pip install -q -r scripts\requirements-print-watcher.txt
+  python -m pip install -q pywin32 2>nul
+  if defined PHOTOBOOTH_PRINTER_NAME (
+    echo Print watcher: printer=%PHOTOBOOTH_PRINTER_NAME%
+    echo Print watcher: PHOTOBOOTH_DATA_DIR=%PHOTOBOOTH_DATA_DIR%
+    start "PhotoBoothPrintWatcher" /B python "%CD%\scripts\print_watcher.py" --data-dir "%PHOTOBOOTH_DATA_DIR%" --printer "%PHOTOBOOTH_PRINTER_NAME%"
+  ) else (
+    echo Print watcher: printer=^(system default^)
+    echo Print watcher: PHOTOBOOTH_DATA_DIR=%PHOTOBOOTH_DATA_DIR%
+    start "PhotoBoothPrintWatcher" /B python "%CD%\scripts\print_watcher.py" --data-dir "%PHOTOBOOTH_DATA_DIR%"
+  )
+  echo Print watcher started in background ^(same DATA_DIR as API^). Close this window to stop the API; you may need to end the watcher task manually if it stays running.
 )
 
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"

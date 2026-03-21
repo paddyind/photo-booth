@@ -1,0 +1,6 @@
+# Host-side folder watcher → print new finals (Docker + standalone).
+# Install: pip install -r scripts/requirements-print-watcher.txt
+# Windows (recommended for GDI printing): pip install pywin32
+
+watchdog>=3.0.0
+Pillow>=10.0.0

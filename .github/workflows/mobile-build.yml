@@ -37,7 +37,7 @@ on:
         default: "EXTERNAL_STORAGE"
         type: string
       save_path:
-        description: "Parent folder under fs_directory; app creates PhotoBooth_YYYYMMDD inside it (e.g. Download or Documents)."
+        description: "Parent folder under fs_directory; app creates PhotoBooth_DDMMYYYY inside it (e.g. Download or Documents)."
         required: false
         default: "Download"
         type: string

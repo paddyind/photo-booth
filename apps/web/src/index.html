@@ -80,12 +80,39 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .rear-preview-toolbar {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #171717;
+        border: 1px solid #333;
+      }
+      .rear-preview-toolbar.visible {
+        display: flex;
+      }
+      .rear-print-countdown {
+        font-size: 15px;
+        font-weight: 700;
+        color: #7ad0ff;
+        flex: 1;
+        min-width: 140px;
+        text-align: right;
+      }
+      .rear-print-countdown.idle {
+        font-weight: 500;
+        color: #9ad;
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
       <h1>Photo Booth</h1>
-      <p class="muted">Capture -> Preview -> Finalize as PNG/PDF -> Print (browser print dialog)</p>
+      <p class="muted" id="appTagline">Start the camera, capture, pick a frame, then print. Rear camera uses auto-print after a short countdown — use <strong>Capture again</strong> above the preview to retake.</p>
 
       <div class="card">
         <video id="video" autoplay playsinline></video>
@@ -115,10 +142,10 @@
             <option value="pdf">PDF</option>
           </select>
           <button id="printBtn" class="secondary" style="display:none;">Print Final</button>
-          <button id="cleanupBtn" class="secondary">Clean Saved Files</button>
+          <button id="cleanupBtn" class="secondary" type="button" hidden>Clean saved files</button>
         </div>
-        <div id="status" class="status">Initializing camera...</div>
-        <details class="muted" style="margin-top:8px;">
+        <div id="status" class="status">Loading…</div>
+        <details id="debugPanel" class="muted" style="margin-top:8px;" hidden>
           <summary>Debug logs</summary>
           <pre id="debugLog" style="white-space:pre-wrap;max-height:160px;overflow:auto;"></pre>
         </details>
@@ -126,6 +153,12 @@
 
       <div class="card" id="previewCard" style="display:none;">
         <h3>Composed Preview</h3>
+        <div id="rearPreviewToolbar" class="rear-preview-toolbar" aria-live="polite">
+          <button id="rearCaptureAgainBtn" type="button" class="secondary" aria-label="Capture again and replace preview">
+            Capture again
+          </button>
+          <span id="rearPrintCountdown" class="rear-print-countdown idle"></span>
+        </div>
         <div id="previewShell" class="preview-shell">
           <img id="preview" alt="Preview will appear here" />
         </div>
@@ -143,6 +176,37 @@
         window.PHOTOBOOTH_ENABLE_8X11 === "true" ||
         window.PHOTOBOOTH_ENABLE_8X11 === 1 ||
         window.PHOTOBOOTH_ENABLE_8X11 === "1";
+      /** Rear mode: ms before opening print URL (default 10s). Inject PHOTOBOOTH_REAR_PRINT_DELAY_MS. */
+      const REAR_AUTO_PRINT_DELAY_MS =
+        Number(window.PHOTOBOOTH_REAR_PRINT_DELAY_MS) > 0
+          ? Number(window.PHOTOBOOTH_REAR_PRINT_DELAY_MS)
+          : 10000;
+      /**
+       * When true, rear mode does not open the browser print tab after the delay (use host print_watcher only).
+       * Inject PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT.
+       */
+      const SUPPRESS_REAR_BROWSER_PRINT =
+        window.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT === true ||
+        window.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT === "true" ||
+        window.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT === 1 ||
+        window.PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT === "1";
+      /**
+       * Verbose logging + debug panel. Enable with ?debug=1, #debug, or window.PHOTOBOOTH_DEBUG (prepare-www / console).
+       */
+      const DEBUG_MODE =
+        window.PHOTOBOOTH_DEBUG === true ||
+        window.PHOTOBOOTH_DEBUG === "true" ||
+        window.PHOTOBOOTH_DEBUG === 1 ||
+        window.PHOTOBOOTH_DEBUG === "1" ||
+        (typeof location !== "undefined" &&
+          (/(?:^|[?&#])debug=1(?:&|$)/.test(location.search) || /#debug\b/.test(location.hash)));
+      /** Show “Clean saved files” (mobile storage). Hidden by default; enable with PHOTOBOOTH_SHOW_CLEANUP or debug mode. */
+      const SHOW_CLEANUP =
+        DEBUG_MODE ||
+        window.PHOTOBOOTH_SHOW_CLEANUP === true ||
+        window.PHOTOBOOTH_SHOW_CLEANUP === "true" ||
+        window.PHOTOBOOTH_SHOW_CLEANUP === 1 ||
+        window.PHOTOBOOTH_SHOW_CLEANUP === "1";
       // Capacitor @capacitor/filesystem Directory enum value (inject via prepare-www env PHOTOBOOTH_FS_DIRECTORY).
       const ALLOWED_FS_DIRECTORIES = new Set([
         "DOCUMENTS",
@@ -164,20 +228,20 @@
           .replace(/^\/+|\/+$/g, "")
           .replace(/\\/g, "/");
       }
-      const DATED_FOLDER_STORAGE_KEY = "photobooth_event_sync_folder_v1";
-      /** Reused across app updates; created on first run. Format: PhotoBooth_YYYYMMDD */
+      const DATED_FOLDER_STORAGE_KEY = "photobooth_event_sync_folder_v2";
+      /** Reused across app updates; created on first run. Format: PhotoBooth_DDMMYYYY (matches standalone API data-standalone layout). */
       function getOrCreateEventFolderName() {
         try {
           let name = localStorage.getItem(DATED_FOLDER_STORAGE_KEY);
           if (name && /^PhotoBooth_\d{8}$/.test(name)) return name;
           const d = new Date();
-          const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-          name = `PhotoBooth_${ymd}`;
+          const ddmmyyyy = `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${d.getFullYear()}`;
+          name = `PhotoBooth_${ddmmyyyy}`;
           localStorage.setItem(DATED_FOLDER_STORAGE_KEY, name);
           return name;
         } catch (_e) {
           const d = new Date();
-          return `PhotoBooth_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+          return `PhotoBooth_${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${d.getFullYear()}`;
         }
       }
       const EVENT_FOLDER_NAME = getOrCreateEventFolderName();
@@ -210,6 +274,23 @@
       const statusEl = document.getElementById("status");
       const finalLinkWrap = document.getElementById("finalLinkWrap");
       const debugLogEl = document.getElementById("debugLog");
+      const debugPanel = document.getElementById("debugPanel");
+
+      function applyProductionChrome() {
+        if (DEBUG_MODE) {
+          debugPanel?.removeAttribute("hidden");
+        } else {
+          debugPanel?.setAttribute("hidden", "");
+        }
+        if (SHOW_CLEANUP) {
+          cleanupBtn?.removeAttribute("hidden");
+        } else {
+          cleanupBtn?.setAttribute("hidden", "");
+        }
+      }
+      const rearPreviewToolbar = document.getElementById("rearPreviewToolbar");
+      const rearCaptureAgainBtn = document.getElementById("rearCaptureAgainBtn");
+      const rearPrintCountdown = document.getElementById("rearPrintCountdown");
 
       let currentImageId = null;
       let finalizedImageId = null;
@@ -220,6 +301,144 @@
       let rearFixedFrameId = "";
       let currentCaptureBlob = null;
       let currentCaptureMeta = null;
+      let rearAutoPrintTimer = null;
+      let rearCountdownInterval = null;
+      /** Seconds remaining for auto-print, or null if not counting */
+      let rearCountdownSecondsLeft = null;
+      let captureWorkflowBusy = false;
+      let rearPreparingFinal = false;
+
+      function clearRearAutoPrintSchedule() {
+        if (rearAutoPrintTimer) clearTimeout(rearAutoPrintTimer);
+        rearAutoPrintTimer = null;
+        if (rearCountdownInterval) clearInterval(rearCountdownInterval);
+        rearCountdownInterval = null;
+        rearCountdownSecondsLeft = null;
+        syncRearPreviewToolbar();
+      }
+
+      function rearPrintDelayLabel() {
+        const s = Math.max(1, Math.round(REAR_AUTO_PRINT_DELAY_MS / 1000));
+        return `${s}s`;
+      }
+
+      /**
+       * Rear mode: toolbar above preview — Capture again + countdown / state text.
+       */
+      function syncRearPreviewToolbar() {
+        if (!rearPreviewToolbar || !rearPrintCountdown) return;
+        const cardVisible = previewCard && previewCard.style.display !== "none";
+        if (!isRearMode() || !cardVisible || !currentImageId) {
+          rearPreviewToolbar.classList.remove("visible");
+          return;
+        }
+        rearPreviewToolbar.classList.add("visible");
+
+        if (rearPreparingFinal) {
+          rearPrintCountdown.classList.add("idle");
+          rearPrintCountdown.textContent = "Preparing JPEG final…";
+          return;
+        }
+
+        if (rearCountdownSecondsLeft != null && rearCountdownSecondsLeft > 0) {
+          rearPrintCountdown.classList.remove("idle");
+          if (SUPPRESS_REAR_BROWSER_PRINT) {
+            rearPrintCountdown.textContent = `Folder print in ${rearCountdownSecondsLeft} s…`;
+          } else {
+            rearPrintCountdown.textContent = `Printing in ${rearCountdownSecondsLeft} s…`;
+          }
+        } else if (rearCountdownSecondsLeft === 0) {
+          rearPrintCountdown.classList.remove("idle");
+          rearPrintCountdown.textContent = SUPPRESS_REAR_BROWSER_PRINT
+            ? "Sending to printer…"
+            : "Opening print…";
+        } else {
+          rearPrintCountdown.classList.add("idle");
+          if (currentFinalUrl) {
+            rearPrintCountdown.textContent = `Ready — Print now or wait for auto-print (${rearPrintDelayLabel()}). Capture again to retake.`;
+          } else {
+            rearPrintCountdown.textContent = "Tap Capture again to take another photo.";
+          }
+        }
+      }
+
+      /**
+       * After rear-mode final is ready: countdown then open print URL (unless suppressed for watch-folder printing).
+       */
+      function scheduleRearAutoPrint() {
+        clearRearAutoPrintSchedule();
+        if (!isRearMode() || !currentFinalUrl) return;
+        const totalSec = Math.max(1, Math.ceil(REAR_AUTO_PRINT_DELAY_MS / 1000));
+        rearCountdownSecondsLeft = totalSec;
+        syncRearPreviewToolbar();
+
+        function updateStatusLine() {
+          if (!isRearMode() || !currentFinalUrl) return;
+          const left = rearCountdownSecondsLeft;
+          if (left == null) return;
+          if (left <= 0) {
+            setStatus(
+              DEBUG_MODE
+                ? SUPPRESS_REAR_BROWSER_PRINT
+                  ? "Rear: sending to folder printer…"
+                  : "Rear: opening print…"
+                : SUPPRESS_REAR_BROWSER_PRINT
+                  ? "Sending to printer…"
+                  : "Opening print…"
+            );
+            return;
+          }
+          if (DEBUG_MODE) {
+            if (SUPPRESS_REAR_BROWSER_PRINT) {
+              setStatus(
+                `Rear: folder print in ${left} s (${rearPrintDelayLabel()} total). Capture again above preview to cancel.`
+              );
+            } else {
+              setStatus(
+                `Rear: printing in ${left} s (${rearPrintDelayLabel()} total). Capture again or Print now.`
+              );
+            }
+          } else {
+            setStatus(
+              SUPPRESS_REAR_BROWSER_PRINT
+                ? `Printer in ${left} s — Capture again to cancel`
+                : `Printing in ${left} s — Capture again or Print now`
+            );
+          }
+        }
+        updateStatusLine();
+        rearCountdownInterval = setInterval(() => {
+          if (rearCountdownSecondsLeft == null) return;
+          rearCountdownSecondsLeft -= 1;
+          syncRearPreviewToolbar();
+          updateStatusLine();
+          if (rearCountdownSecondsLeft <= 0) {
+            if (rearCountdownInterval) clearInterval(rearCountdownInterval);
+            rearCountdownInterval = null;
+          }
+        }, 1000);
+        rearAutoPrintTimer = setTimeout(() => {
+          clearRearAutoPrintSchedule();
+          if (!isRearMode() || !currentFinalUrl) return;
+          if (!SUPPRESS_REAR_BROWSER_PRINT) {
+            window.open(currentFinalUrl, "_blank", "noopener");
+            setStatus(DEBUG_MODE ? "Rear: print dialog opened." : "Print opened.");
+          } else {
+            setStatus(
+              DEBUG_MODE
+                ? "Rear: final on server — print_watcher will print."
+                : "Sent to printer folder."
+            );
+          }
+          if (rearPrintCountdown && isRearMode() && previewCard.style.display !== "none" && currentImageId) {
+            rearPrintCountdown.classList.add("idle");
+            rearPrintCountdown.textContent = SUPPRESS_REAR_BROWSER_PRINT
+              ? "Sent to folder printer — Capture again for another."
+              : "Print opened — Capture again for another.";
+            rearPreviewToolbar.classList.add("visible");
+          }
+        }, REAR_AUTO_PRINT_DELAY_MS);
+      }
 
       function setStatus(message, isError = false) {
         statusEl.textContent = message;
@@ -227,13 +446,13 @@
       }
 
       function logDebug(message, meta = null) {
+        if (!DEBUG_MODE) return;
         const ts = new Date().toISOString();
         const detail = meta ? ` ${JSON.stringify(meta)}` : "";
         const line = `[${ts}] ${message}${detail}`;
         console.log(line);
         if (!debugLogEl) return;
         debugLogEl.textContent += `${line}\n`;
-        // Keep the panel compact on mobile.
         const maxChars = 6000;
         if (debugLogEl.textContent.length > maxChars) {
           debugLogEl.textContent = debugLogEl.textContent.slice(-maxChars);
@@ -264,7 +483,10 @@
             apiBase: API_BASE,
             page: location.href,
           });
-          throw new Error(`${e.message} (api=${API_BASE}, online=${navigator.onLine})`);
+          const hint = DEBUG_MODE
+            ? `${e.message} (api=${API_BASE}, online=${navigator.onLine})`
+            : "Cannot reach the photo booth server. Check Wi‑Fi and that the app is running.";
+          throw new Error(hint);
         }
       }
 
@@ -274,12 +496,14 @@
           if (!res.ok) {
             const body = await readErrorBody(res);
             logDebug("Health check returned non-OK", { status: res.status, body });
-            return;
+            return false;
           }
           const data = await res.json();
           logDebug("Health check OK", data);
+          return true;
         } catch (e) {
           logDebug("Health check error", { message: e.message });
+          return false;
         }
       }
 
@@ -313,9 +537,9 @@
         return val.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 60) || "NO_NAME";
       }
 
+      /** Short base for saves: guest name + capture timestamp only (matches API image_id prefix). */
       function buildFilePrefix(meta) {
-        const safeFrame = sanitizeName((meta.frameId || "no-frame").replace(/_/g, "-"));
-        return `${meta.baseName}_${meta.captureTs}_${meta.camera}_${meta.size}_${meta.orientation}_${safeFrame}`;
+        return `${meta.baseName}_${meta.captureTs}`;
       }
 
       /**
@@ -500,12 +724,18 @@
           sizeSelect.disabled = true;
           orientationSelect.disabled = true;
           frameGrid.style.display = "none";
+          finalFormat.value = "jpeg";
+          prepareFinalBtn.style.display = "none";
+          finalFormat.style.display = "none";
         } else {
           sizeSelect.disabled = false;
           orientationSelect.disabled = false;
+          prepareFinalBtn.style.display = currentImageId ? "" : "none";
+          finalFormat.style.display = currentImageId ? "" : "none";
           if (currentImageId) frameGrid.style.display = "grid";
         }
         updatePreviewRatio();
+        syncRearPreviewToolbar();
       }
 
       function fillSelect(selectEl, options, defaultValue = "") {
@@ -540,7 +770,7 @@
         activeStream = stream;
         video.srcObject = stream;
         setCameraButtonsState(true);
-        setStatus("Camera ready (ON)");
+        setStatus(DEBUG_MODE ? "Camera ready (ON)" : "Camera on");
       }
 
       function stopCamera() {
@@ -554,7 +784,7 @@
         activeStream = null;
         video.srcObject = null;
         setCameraButtonsState(false);
-        setStatus("Camera stopped (OFF)");
+        setStatus(DEBUG_MODE ? "Camera stopped (OFF)" : "Camera off");
       }
 
       async function loadOptions() {
@@ -679,11 +909,33 @@
       }
 
       async function captureAndCompose() {
+        if (captureWorkflowBusy) return;
         if (!video.videoWidth || !video.videoHeight) {
           setStatus("Camera not ready yet. Please allow camera access.", true);
           return;
         }
+        captureWorkflowBusy = true;
+        captureBtn.disabled = true;
+        rearCaptureAgainBtn.disabled = true;
+        try {
+          if (isRearMode()) {
+            clearRearAutoPrintSchedule();
+            if (previewCard.style.display !== "none") {
+              rearPreviewToolbar.classList.add("visible");
+              rearPrintCountdown.classList.add("idle");
+              rearPrintCountdown.textContent = "Capturing…";
+            }
+          }
+          await runCaptureAndComposeCore();
+        } finally {
+          captureWorkflowBusy = false;
+          captureBtn.disabled = false;
+          rearCaptureAgainBtn.disabled = false;
+          syncRearPreviewToolbar();
+        }
+      }
 
+      async function runCaptureAndComposeCore() {
         const size = sizeSelect.value || "4x6";
         const orientation = orientationSelect.value || "portrait";
 
@@ -693,9 +945,10 @@
         ctx.drawImage(video, 0, 0);
         const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
         currentCaptureBlob = blob;
+        const captureTs = getSessionTimestamp();
         currentCaptureMeta = {
           baseName: sanitizeName(nameInput.value),
-          captureTs: getSessionTimestamp(),
+          captureTs,
           size,
           orientation,
           camera: isRearMode() ? "rear" : "front",
@@ -708,6 +961,8 @@
         form.append("frame_id", "");
         form.append("size", size);
         form.append("orientation", orientation);
+        form.append("display_name", (nameInput.value || "").trim());
+        form.append("capture_ts", captureTs);
 
         const res = await apiFetch(`${API_BASE}/compose/preview`, { method: "POST", body: form }, "compose-preview");
         if (!res.ok) throw new Error(`Capture failed (${res.status}) ${await readErrorBody(res)}`);
@@ -721,20 +976,39 @@
         selectedFrameId = "";
         framePreviewUrls = {};
 
-        setStatus("Image captured. Preparing frame options...");
+        setStatus(DEBUG_MODE ? "Image captured. Preparing frame options…" : "Working…");
         await loadFrames(false);
 
         const originalFilename = `${buildFilePrefix(currentCaptureMeta)}_original.jpg`;
         const originalSave = await saveBlobToPhotoBoothFolder(blob, originalFilename);
         logDebug("Original image saved", { filename: originalFilename, ...originalSave });
-        setStatus(`Image captured and saved: ${originalFilename}`);
+        setStatus(DEBUG_MODE ? `Image captured and saved: ${originalFilename}` : "Photo saved.");
 
-        // Reveal frame selection + preview + final options after capture.
-        frameGrid.style.display = isRearMode() ? "none" : "grid";
         previewCard.style.display = "block";
-        prepareFinalBtn.style.display = "";
-        finalFormat.style.display = "";
         printBtn.style.display = "";
+
+        if (isRearMode()) {
+          finalFormat.value = "jpeg";
+          prepareFinalBtn.style.display = "none";
+          finalFormat.style.display = "none";
+          frameGrid.style.display = "none";
+          rearPreparingFinal = true;
+          syncRearPreviewToolbar();
+          try {
+            await prepareFinal();
+            scheduleRearAutoPrint();
+          } catch (e) {
+            setStatus(`Rear auto-final failed: ${e.message}`, true);
+            logDebug("Rear auto-final error", { message: e.message });
+          } finally {
+            rearPreparingFinal = false;
+            syncRearPreviewToolbar();
+          }
+        } else {
+          frameGrid.style.display = "grid";
+          prepareFinalBtn.style.display = "";
+          finalFormat.style.display = "";
+        }
       }
 
       async function prepareFinal() {
@@ -765,7 +1039,11 @@
         const href = `${API_BASE}${data.final_url}?t=${Date.now()}`;
         currentFinalUrl = href;
         finalizedImageId = currentImageId;
-        finalLinkWrap.innerHTML = `Final ready: <a href="${href}" target="_blank" rel="noopener">Open ${data.output_format.toUpperCase()}</a>`;
+        if (isRearMode() && !DEBUG_MODE) {
+          finalLinkWrap.innerHTML = "";
+        } else {
+          finalLinkWrap.innerHTML = `Final ready: <a href="${href}" target="_blank" rel="noopener">Open ${data.output_format.toUpperCase()}</a>`;
+        }
         const meta = currentCaptureMeta || {
           baseName: sanitizeName(nameInput.value),
           captureTs: getSessionTimestamp(),
@@ -780,7 +1058,11 @@
         const finalFilename = `${buildFilePrefix(meta)}_final.${ext}`;
         const finalSave = await downloadFinalToDevice(href, finalFilename);
         logDebug("Final file saved", { filename: finalFilename, format: data.output_format, ...finalSave });
-        setStatus(`Final ${data.output_format.toUpperCase()} prepared and saved: ${finalFilename}`);
+        setStatus(
+          DEBUG_MODE
+            ? `Final ${data.output_format.toUpperCase()} prepared and saved: ${finalFilename}`
+            : "Final ready."
+        );
 
         // Ensure print is available for this freshly prepared final.
         printBtn.style.display = "";
@@ -819,8 +1101,18 @@
           setStatus("Prepare a final file first.", true);
           return;
         }
+        clearRearAutoPrintSchedule();
+        syncRearPreviewToolbar();
         window.open(currentFinalUrl, "_blank", "noopener");
-        setStatus("Opened final file. Use browser/system print dialog.");
+        setStatus(DEBUG_MODE ? "Opened final file. Use the print dialog." : "Print dialog opened.");
+      });
+
+      rearCaptureAgainBtn.addEventListener("click", async () => {
+        try {
+          await captureAndCompose();
+        } catch (e) {
+          setStatus(`Capture error: ${e.message}`, true);
+        }
       });
 
       cleanupBtn.addEventListener("click", async () => {
@@ -854,25 +1146,48 @@
       });
 
       cameraModeSelect.addEventListener("change", async () => {
+        clearRearAutoPrintSchedule();
         const wasOn = !!activeStream;
         if (wasOn) stopCamera();
         applyCameraModeUI();
+        syncRearPreviewToolbar();
         try {
           await loadFrames(false);
           if (wasOn) await startCamera();
-          setStatus(isRearMode() ? "Rear camera mode active: fixed 4x6 + fixed frame." : "Front camera mode active: interactive options enabled.");
+          setStatus(
+            isRearMode()
+              ? DEBUG_MODE
+                ? "Rear camera: fixed 4×6 + frame."
+                : "Rear camera"
+              : DEBUG_MODE
+                ? "Front camera: full options."
+                : "Front camera"
+          );
         } catch (e) {
           setStatus(`Mode switch failed: ${e.message}`, true);
         }
       });
 
       (async function init() {
-        // Security-friendly default: keep camera OFF until user explicitly starts it.
+        applyProductionChrome();
         setCameraButtonsState(false);
-        setStatus("Camera is OFF. Click Start Camera.");
+        await ensureNativeStoragePermission();
+        const serverOk = await checkApiHealth();
+        if (!serverOk) {
+          setStatus(
+            DEBUG_MODE
+              ? "Cannot reach API. Start standalone (:8001) or Docker (:8000) on this machine."
+              : "Can’t connect to the photo booth. Start the server on this computer, then refresh.",
+            true
+          );
+        } else {
+          setStatus(DEBUG_MODE ? "Camera is off — click Start Camera." : "Tap Start camera when you’re ready.");
+        }
         logDebug("App init", {
           apiBase: API_BASE,
           enable8x11: ENABLE_8X11,
+          rearAutoPrintDelayMs: REAR_AUTO_PRINT_DELAY_MS,
+          suppressRearBrowserPrint: SUPPRESS_REAR_BROWSER_PRINT,
           online: navigator.onLine,
           fsDirectory: FS_DIRECTORY,
           saveParent: savePathParent || "(none — dated folder only)",
@@ -881,17 +1196,21 @@
           syncthingHint:
             FS_DIRECTORY === "EXTERNAL_STORAGE"
               ? `Phone: /storage/emulated/0/${SAVE_PATH}/`
-              : "Use Debug logs path after save; or set EXTERNAL_STORAGE + Download for a fixed public folder.",
+              : "Set EXTERNAL_STORAGE + Download for a public save folder.",
         });
-        await ensureNativeStoragePermission();
-        await checkApiHealth();
         try {
-          await loadOptions();
-          applyCameraModeUI();
-          updatePreviewRatio();
-          await loadFrames(false);
+          if (serverOk) {
+            await loadOptions();
+            applyCameraModeUI();
+            updatePreviewRatio();
+            await loadFrames(false);
+            syncRearPreviewToolbar();
+          }
         } catch (e) {
-          setStatus(`Frames unavailable: ${e.message}`, true);
+          setStatus(
+            DEBUG_MODE ? `Frames unavailable: ${e.message}` : "Could not load frames. Check the server and try again.",
+            true
+          );
         }
       })();
 

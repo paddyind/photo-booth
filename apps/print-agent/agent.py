@@ -1,8 +1,8 @@
 """
-Local print worker placeholder.
+Local print worker placeholder (API job polling).
 
-Run this on the machine that has printer drivers installed.
-It can be extended to poll API jobs and print composed finals.
+For **folder-based** printing of new finals under DATA_DIR, use **`scripts/print_watcher.py`**
+and **`scripts/run-print-watcher.*`** instead (Docker + standalone).
 """
 
 import time
