@@ -17,6 +17,12 @@ data/archive/*
 !data/finals/.gitkeep
 !data/archive/.gitkeep
 
+# Standalone uvicorn runtime (separate from Docker ./data when both run)
+data-standalone/
+
+# Python venv (standalone API)
+.venv/
+
 # Mobile build artifacts
 apps/mobile/android/
 apps/mobile/ios/

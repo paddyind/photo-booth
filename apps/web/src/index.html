@@ -115,6 +115,7 @@
             <option value="pdf">PDF</option>
           </select>
           <button id="printBtn" class="secondary" style="display:none;">Print Final</button>
+          <button id="cleanupBtn" class="secondary">Clean Saved Files</button>
         </div>
         <div id="status" class="status">Initializing camera...</div>
         <details class="muted" style="margin-top:8px;">
@@ -142,6 +143,25 @@
         window.PHOTOBOOTH_ENABLE_8X11 === "true" ||
         window.PHOTOBOOTH_ENABLE_8X11 === 1 ||
         window.PHOTOBOOTH_ENABLE_8X11 === "1";
+      // Capacitor @capacitor/filesystem Directory enum value (inject via prepare-www env PHOTOBOOTH_FS_DIRECTORY).
+      const ALLOWED_FS_DIRECTORIES = new Set([
+        "DOCUMENTS",
+        "DATA",
+        "CACHE",
+        "LIBRARY",
+        "EXTERNAL",
+        "EXTERNAL_STORAGE",
+      ]);
+      const FS_DIRECTORY_RAW = (window.PHOTOBOOTH_FS_DIRECTORY || "DOCUMENTS").toString().toUpperCase();
+      const FS_DIRECTORY = ALLOWED_FS_DIRECTORIES.has(FS_DIRECTORY_RAW) ? FS_DIRECTORY_RAW : "DOCUMENTS";
+      const SAVE_PATH_ORIGINALS = (window.PHOTOBOOTH_SAVE_PATH_ORIGINALS || "PhotoBooth/originals")
+        .toString()
+        .replace(/^\/+|\/+$/g, "")
+        .replace(/\\/g, "/");
+      const SAVE_PATH_FINALS = (window.PHOTOBOOTH_SAVE_PATH_FINALS || "PhotoBooth/finals")
+        .toString()
+        .replace(/^\/+|\/+$/g, "")
+        .replace(/\\/g, "/");
       const video = document.getElementById("video");
       const canvas = document.getElementById("canvas");
       const preview = document.getElementById("preview");
@@ -156,6 +176,7 @@
       const finalFormat = document.getElementById("finalFormat");
       const prepareFinalBtn = document.getElementById("prepareFinalBtn");
       const printBtn = document.getElementById("printBtn");
+      const cleanupBtn = document.getElementById("cleanupBtn");
       const previewCard = document.getElementById("previewCard");
       const previewShell = document.getElementById("previewShell");
       const statusEl = document.getElementById("status");
@@ -170,6 +191,7 @@
       let activeStream = null;
       let rearFixedFrameId = "";
       let currentCaptureBlob = null;
+      let currentCaptureMeta = null;
 
       function setStatus(message, isError = false) {
         statusEl.textContent = message;
@@ -263,6 +285,11 @@
         return val.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 60) || "NO_NAME";
       }
 
+      function buildFilePrefix(meta) {
+        const safeFrame = sanitizeName((meta.frameId || "no-frame").replace(/_/g, "-"));
+        return `${meta.baseName}_${meta.captureTs}_${meta.camera}_${meta.size}_${meta.orientation}_${safeFrame}`;
+      }
+
       function triggerDownloadBlob(blob, filename) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -299,37 +326,127 @@
         }
       }
 
-      async function saveBlobToPhotoBoothFolder(blob, filename) {
+      /** Ensure nested path exists under Capacitor Directory (e.g. DCIM/photobooth/finals). */
+      async function ensureFsPath(fsPlugin, directory, relativeDirPath) {
+        const parts = relativeDirPath.split("/").filter(Boolean);
+        let acc = "";
+        for (const part of parts) {
+          acc = acc ? `${acc}/${part}` : part;
+          if (typeof fsPlugin.mkdir === "function") {
+            await fsPlugin.mkdir({ path: acc, directory, recursive: true });
+          }
+        }
+      }
+
+      function saveFolderForCategory(category) {
+        return category === "final" ? SAVE_PATH_FINALS : SAVE_PATH_ORIGINALS;
+      }
+
+      /**
+       * Save blob on native app under configured folder, or trigger browser download on web.
+       * @param {"original"|"final"} category
+       */
+      async function saveBlobToPhotoBoothFolder(blob, filename, category = "original") {
+        const folder = saveFolderForCategory(category);
+        const relativeFilePath = `${folder}/${filename}`;
         if (!isCapacitorNative()) {
           triggerDownloadBlob(blob, filename);
-          return { mode: "download", path: `Downloads/${filename}` };
+          return {
+            mode: "download",
+            path: `Downloads/${filename}`,
+            category,
+            folder,
+            fsDirectory: FS_DIRECTORY,
+          };
         }
         const fsPlugin = window.Capacitor?.Plugins?.Filesystem;
         if (!fsPlugin || typeof fsPlugin.writeFile !== "function") {
           triggerDownloadBlob(blob, filename);
-          return { mode: "download", path: `Downloads/${filename}` };
+          return {
+            mode: "download",
+            path: `Downloads/${filename}`,
+            category,
+            folder,
+            fsDirectory: FS_DIRECTORY,
+          };
         }
         try {
           await ensureNativeStoragePermission();
-          if (typeof fsPlugin.mkdir === "function") {
-            await fsPlugin.mkdir({
-              path: "PhotoBooth",
-              directory: "DOCUMENTS",
-              recursive: true,
-            });
-          }
+          await ensureFsPath(fsPlugin, FS_DIRECTORY, folder);
           const data = await blobToBase64(blob);
           await fsPlugin.writeFile({
-            path: `PhotoBooth/${filename}`,
+            path: relativeFilePath,
             data,
-            directory: "DOCUMENTS",
+            directory: FS_DIRECTORY,
             recursive: true,
           });
-          return { mode: "native", path: `Documents/PhotoBooth/${filename}` };
+          return {
+            mode: "native",
+            path: `${FS_DIRECTORY}/${relativeFilePath}`,
+            category,
+            folder,
+            fsDirectory: FS_DIRECTORY,
+          };
         } catch (e) {
           logDebug("Native save failed; falling back to browser download", { message: e.message });
           triggerDownloadBlob(blob, filename);
-          return { mode: "download", path: `Downloads/${filename}` };
+          return {
+            mode: "download",
+            path: `Downloads/${filename}`,
+            category,
+            folder,
+            fsDirectory: FS_DIRECTORY,
+          };
+        }
+      }
+
+      /** Delete only files directly in dirPath (not subfolders) — matches how we write outputs. */
+      async function deleteFlatFilesInFsDir(fsPlugin, directory, dirPath) {
+        let deleted = 0;
+        try {
+          const listing = await fsPlugin.readdir({ path: dirPath, directory });
+          const files = listing?.files || [];
+          for (const f of files) {
+            const name = typeof f === "string" ? f : f?.name;
+            const type = typeof f === "object" && f ? f.type : undefined;
+            if (!name) continue;
+            if (type === "directory") continue;
+            await fsPlugin.deleteFile({ path: `${dirPath}/${name}`, directory });
+            deleted += 1;
+          }
+        } catch (_e) {
+          /* empty or missing dir */
+        }
+        return deleted;
+      }
+
+      async function cleanupSavedFiles() {
+        if (!isCapacitorNative()) {
+          setStatus("Cleanup is available on mobile app storage only.", true);
+          return;
+        }
+        const fsPlugin = window.Capacitor?.Plugins?.Filesystem;
+        if (!fsPlugin || typeof fsPlugin.readdir !== "function" || typeof fsPlugin.deleteFile !== "function") {
+          setStatus("Cleanup not supported in this build.", true);
+          return;
+        }
+        await ensureNativeStoragePermission();
+        try {
+          let deleted = 0;
+          deleted += await deleteFlatFilesInFsDir(fsPlugin, FS_DIRECTORY, SAVE_PATH_ORIGINALS);
+          deleted += await deleteFlatFilesInFsDir(fsPlugin, FS_DIRECTORY, SAVE_PATH_FINALS);
+          setStatus(
+            `Cleanup complete. Removed ${deleted} item(s) under ${FS_DIRECTORY}: ${SAVE_PATH_ORIGINALS}, ${SAVE_PATH_FINALS}`
+          );
+          logDebug("Cleanup complete", {
+            deleted,
+            fsDirectory: FS_DIRECTORY,
+            originals: SAVE_PATH_ORIGINALS,
+            finals: SAVE_PATH_FINALS,
+          });
+        } catch (e) {
+          setStatus(`Cleanup failed: ${e.message}`, true);
+          logDebug("Cleanup failed", { message: e.message });
         }
       }
 
@@ -337,7 +454,7 @@
         const res = await apiFetch(finalUrl, {}, "download-final");
         if (!res.ok) throw new Error(`Final download failed (${res.status}) ${await readErrorBody(res)}`);
         const blob = await res.blob();
-        return saveBlobToPhotoBoothFolder(blob, filename);
+        return saveBlobToPhotoBoothFolder(blob, filename, "final");
       }
 
       function applyCameraModeUI() {
@@ -544,6 +661,14 @@
         ctx.drawImage(video, 0, 0);
         const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
         currentCaptureBlob = blob;
+        currentCaptureMeta = {
+          baseName: sanitizeName(nameInput.value),
+          captureTs: getSessionTimestamp(),
+          size,
+          orientation,
+          camera: isRearMode() ? "rear" : "front",
+          frameId: "no-frame",
+        };
 
         const form = new FormData();
         form.append("image", blob, "capture.jpg");
@@ -567,11 +692,10 @@
         setStatus("Image captured. Preparing frame options...");
         await loadFrames(false);
 
-        const ts = getSessionTimestamp();
-        const baseName = sanitizeName(nameInput.value);
-        const originalFilename = `${baseName}_${ts}_original.jpg`;
+        const originalFilename = `${buildFilePrefix(currentCaptureMeta)}_original.jpg`;
         const originalSave = await saveBlobToPhotoBoothFolder(blob, originalFilename);
         logDebug("Original image saved", { filename: originalFilename, ...originalSave });
+        setStatus(`Image captured and saved: ${originalFilename}`);
 
         // Reveal frame selection + preview + final options after capture.
         frameGrid.style.display = isRearMode() ? "none" : "grid";
@@ -610,13 +734,21 @@
         currentFinalUrl = href;
         finalizedImageId = currentImageId;
         finalLinkWrap.innerHTML = `Final ready: <a href="${href}" target="_blank" rel="noopener">Open ${data.output_format.toUpperCase()}</a>`;
-        const ts = getSessionTimestamp();
-        const baseName = sanitizeName(nameInput.value);
+        const meta = currentCaptureMeta || {
+          baseName: sanitizeName(nameInput.value),
+          captureTs: getSessionTimestamp(),
+          size: sizeSelect.value || "4x6",
+          orientation: orientationSelect.value || "portrait",
+          camera: isRearMode() ? "rear" : "front",
+          frameId: selectedFrameId || "no-frame",
+        };
+        meta.frameId = selectedFrameId || meta.frameId || "no-frame";
+        currentCaptureMeta = meta;
         const ext = data.output_format === "jpeg" ? "jpg" : data.output_format;
-        const finalFilename = `${baseName}_${ts}_final.${ext}`;
+        const finalFilename = `${buildFilePrefix(meta)}_final.${ext}`;
         const finalSave = await downloadFinalToDevice(href, finalFilename);
         logDebug("Final file saved", { filename: finalFilename, format: data.output_format, ...finalSave });
-        setStatus(`Final ${data.output_format.toUpperCase()} prepared. Previews cleared.`);
+        setStatus(`Final ${data.output_format.toUpperCase()} prepared and saved: ${finalFilename}`);
 
         // Ensure print is available for this freshly prepared final.
         printBtn.style.display = "";
@@ -657,6 +789,10 @@
         }
         window.open(currentFinalUrl, "_blank", "noopener");
         setStatus("Opened final file. Use browser/system print dialog.");
+      });
+
+      cleanupBtn.addEventListener("click", async () => {
+        await cleanupSavedFiles();
       });
 
       sizeSelect.addEventListener("change", async () => {
@@ -702,7 +838,14 @@
         // Security-friendly default: keep camera OFF until user explicitly starts it.
         setCameraButtonsState(false);
         setStatus("Camera is OFF. Click Start Camera.");
-        logDebug("App init", { apiBase: API_BASE, enable8x11: ENABLE_8X11, online: navigator.onLine });
+        logDebug("App init", {
+          apiBase: API_BASE,
+          enable8x11: ENABLE_8X11,
+          online: navigator.onLine,
+          fsDirectory: FS_DIRECTORY,
+          saveOriginals: SAVE_PATH_ORIGINALS,
+          saveFinals: SAVE_PATH_FINALS,
+        });
         await ensureNativeStoragePermission();
         await checkApiHealth();
         try {

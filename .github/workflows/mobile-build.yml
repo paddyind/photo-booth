@@ -31,6 +31,21 @@ on:
         required: false
         default: false
         type: boolean
+      fs_directory:
+        description: "Capacitor Filesystem directory for saves (DOCUMENTS, DATA, EXTERNAL, ...)."
+        required: false
+        default: "DOCUMENTS"
+        type: string
+      save_path_originals:
+        description: "Relative folder for camera originals under fs_directory (Syncthing-friendly)."
+        required: false
+        default: "PhotoBooth/originals"
+        type: string
+      save_path_finals:
+        description: "Relative folder for final PNG/JPEG/PDF under fs_directory (point Syncthing at this for laptop printing)."
+        required: false
+        default: "PhotoBooth/finals"
+        type: string
 
 jobs:
   validate-web-bundle:
@@ -51,14 +66,11 @@ jobs:
 
       - name: Prepare mobile www
         env:
-          PHOTOBOOTH_API_BASE: >-
-            ${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url
-                || vars.PHOTOBOOTH_API_BASE
-                || 'http://YOUR_LAN_IP:8000' }}
-          PHOTOBOOTH_ENABLE_8X11: >-
-            ${{ github.event_name == 'workflow_dispatch' && inputs.enable_8x11
-                || vars.PHOTOBOOTH_ENABLE_8X11
-                || false }}
+          PHOTOBOOTH_API_BASE: ${{ inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}
+          PHOTOBOOTH_ENABLE_8X11: ${{ inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}
+          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'DOCUMENTS' }}
+          PHOTOBOOTH_SAVE_PATH_ORIGINALS: ${{ inputs.save_path_originals || vars.PHOTOBOOTH_SAVE_PATH_ORIGINALS || 'PhotoBooth/originals' }}
+          PHOTOBOOTH_SAVE_PATH_FINALS: ${{ inputs.save_path_finals || vars.PHOTOBOOTH_SAVE_PATH_FINALS || 'PhotoBooth/finals' }}
         run: |
           cd apps/mobile
           npm run prepare-www
@@ -107,10 +119,14 @@ jobs:
           echo "Skipping backend/web Docker warm-up in mobile CI (packaging doesn't require live API)."
 
       - name: Capacitor sync
+        env:
+          PHOTOBOOTH_API_BASE: ${{ inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}
+          PHOTOBOOTH_ENABLE_8X11: ${{ inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}
+          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'DOCUMENTS' }}
+          PHOTOBOOTH_SAVE_PATH_ORIGINALS: ${{ inputs.save_path_originals || vars.PHOTOBOOTH_SAVE_PATH_ORIGINALS || 'PhotoBooth/originals' }}
+          PHOTOBOOTH_SAVE_PATH_FINALS: ${{ inputs.save_path_finals || vars.PHOTOBOOTH_SAVE_PATH_FINALS || 'PhotoBooth/finals' }}
         run: |
           cd apps/mobile
-          PHOTOBOOTH_API_BASE="${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}" \
-          PHOTOBOOTH_ENABLE_8X11="${{ github.event_name == 'workflow_dispatch' && inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}" \
           npm run prepare-www
           # Create native Android project files if missing.
           npx cap add android
@@ -225,10 +241,14 @@ jobs:
           echo "Skipping backend/web Docker warm-up in mobile CI (packaging doesn't require live API)."
 
       - name: Capacitor sync
+        env:
+          PHOTOBOOTH_API_BASE: ${{ inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}
+          PHOTOBOOTH_ENABLE_8X11: ${{ inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}
+          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'DOCUMENTS' }}
+          PHOTOBOOTH_SAVE_PATH_ORIGINALS: ${{ inputs.save_path_originals || vars.PHOTOBOOTH_SAVE_PATH_ORIGINALS || 'PhotoBooth/originals' }}
+          PHOTOBOOTH_SAVE_PATH_FINALS: ${{ inputs.save_path_finals || vars.PHOTOBOOTH_SAVE_PATH_FINALS || 'PhotoBooth/finals' }}
         run: |
           cd apps/mobile
-          PHOTOBOOTH_API_BASE="${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}" \
-          PHOTOBOOTH_ENABLE_8X11="${{ github.event_name == 'workflow_dispatch' && inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}" \
           npm run prepare-www
           # Create native iOS project files if missing.
           npx cap add ios
@@ -312,10 +332,14 @@ jobs:
           echo "Skipping backend/web Docker warm-up in mobile CI (packaging doesn't require live API)."
 
       - name: Capacitor sync
+        env:
+          PHOTOBOOTH_API_BASE: ${{ inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}
+          PHOTOBOOTH_ENABLE_8X11: ${{ inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}
+          PHOTOBOOTH_FS_DIRECTORY: ${{ inputs.fs_directory || vars.PHOTOBOOTH_FS_DIRECTORY || 'DOCUMENTS' }}
+          PHOTOBOOTH_SAVE_PATH_ORIGINALS: ${{ inputs.save_path_originals || vars.PHOTOBOOTH_SAVE_PATH_ORIGINALS || 'PhotoBooth/originals' }}
+          PHOTOBOOTH_SAVE_PATH_FINALS: ${{ inputs.save_path_finals || vars.PHOTOBOOTH_SAVE_PATH_FINALS || 'PhotoBooth/finals' }}
         run: |
           cd apps/mobile
-          PHOTOBOOTH_API_BASE="${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url || vars.PHOTOBOOTH_API_BASE || 'http://YOUR_LAN_IP:8000' }}" \
-          PHOTOBOOTH_ENABLE_8X11="${{ github.event_name == 'workflow_dispatch' && inputs.enable_8x11 || vars.PHOTOBOOTH_ENABLE_8X11 || false }}" \
           npm run prepare-www
           npx cap add ios
           npx cap sync ios

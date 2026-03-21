@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    environment:
+      - DATA_DIR=/app/data
+      - FRAMES_DIR=/app/shared/frames
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
