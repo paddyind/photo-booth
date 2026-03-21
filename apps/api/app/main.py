@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import time
+import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
@@ -27,21 +28,6 @@ from pydantic import BaseModel, Field
 from .services.compositor import PRINT_PRESETS, compose_image, get_canvas_config
 
 app = FastAPI(title="Photo Booth API", version="0.1.0")
-
-
-@app.on_event("startup")
-def _startup_log_copy_targets() -> None:
-    """So you can confirm env is loaded before the first /compose/final."""
-    if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE"):
-        qdir = Path(os.getenv("PHOTOBOOTH_PRINT_QUEUE_DIR", str(DATA_DIR / "print-queue"))).expanduser().resolve()
-        _console_log(f"print-queue copy ON → {qdir}")
-    if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_DROPZONE"):
-        dz_raw = (os.getenv("PHOTOBOOTH_DROPZONE_DIR") or "").strip()
-        if dz_raw:
-            dz = Path(dz_raw).expanduser().resolve()
-            _console_log(f"dropzone copy ON → {dz}")
-        else:
-            _console_log("WARNING: PHOTOBOOTH_COPY_FINAL_TO_DROPZONE=1 but PHOTOBOOTH_DROPZONE_DIR is empty")
 
 
 app.add_middleware(
@@ -75,6 +61,84 @@ COMPOSE_CACHE_VERSION = "fit3"
 def _env_truthy(name: str) -> bool:
     v = (os.getenv(name) or "").strip().lower()
     return v in ("1", "true", "yes", "on", "y")
+
+
+def _copy_final_to_dropzone_with_logging(final_path: Path, image_id: str) -> None:
+    """
+    Copy final JPEG to an external folder (e.g. Google Drive). Logs every outcome to stderr.
+    Google Drive / cloud paths can fail with various exceptions; we catch Exception and retry briefly.
+    When the feature is off, we do not log here (startup already prints dropzone: OFF).
+    """
+    if not _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_DROPZONE"):
+        return
+    dz_raw = (os.getenv("PHOTOBOOTH_DROPZONE_DIR") or "").strip()
+    if not dz_raw:
+        _console_log(
+            "dropzone: ERROR — PHOTOBOOTH_COPY_FINAL_TO_DROPZONE is on but PHOTOBOOTH_DROPZONE_DIR is empty"
+        )
+        return
+    dest_dir = Path(dz_raw).expanduser().resolve()
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        _console_log(f"dropzone: ERROR mkdir {dest_dir}: {e!r}")
+        _console_log(traceback.format_exc())
+        return
+
+    stem = final_path.stem
+    dest = dest_dir / f"{stem}.jpg"
+    if dest.exists():
+        dest = dest_dir / f"{stem}_{int(time.time())}.jpg"
+
+    last_err: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            shutil.copy2(str(final_path), str(dest))
+            _console_log(f"dropzone: OK → {dest} (attempt {attempt}) image_id={image_id}")
+            return
+        except Exception as e1:
+            last_err = e1
+            try:
+                shutil.copyfile(str(final_path), str(dest))
+                _console_log(f"dropzone: OK (copyfile fallback) → {dest} image_id={image_id}")
+                return
+            except Exception as e2:
+                last_err = e2
+                _console_log(
+                    f"dropzone: attempt {attempt}/3 failed copy2={e1!r} copyfile={e2!r} dest={dest}"
+                )
+                time.sleep(0.35 * attempt)
+
+    _console_log(f"dropzone: FAILED after retries image_id={image_id} last_err={last_err!r}")
+    if last_err is not None:
+        _console_log(
+            "".join(traceback.format_exception(type(last_err), last_err, last_err.__traceback__))
+        )
+
+
+@app.on_event("startup")
+def _startup_log_copy_targets() -> None:
+    """Always print env snapshot so you can confirm .env.standalone reached the API process."""
+    _console_log("--- Photo Booth API: env snapshot (copy targets) ---")
+    _console_log(f"DATA_DIR={DATA_DIR}")
+    _console_log(f"PHOTOBOOTH_COPY_FINAL_TO_DROPZONE={os.getenv('PHOTOBOOTH_COPY_FINAL_TO_DROPZONE')!r}")
+    _console_log(f"PHOTOBOOTH_DROPZONE_DIR={os.getenv('PHOTOBOOTH_DROPZONE_DIR')!r}")
+    _console_log(f"PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE={os.getenv('PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE')!r}")
+    _console_log(f"PHOTOBOOTH_PRINT_QUEUE_DIR={os.getenv('PHOTOBOOTH_PRINT_QUEUE_DIR')!r}")
+    if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE"):
+        qdir = Path(os.getenv("PHOTOBOOTH_PRINT_QUEUE_DIR", str(DATA_DIR / "print-queue"))).expanduser().resolve()
+        _console_log(f"print-queue: ON → {qdir}")
+    else:
+        _console_log("print-queue: OFF")
+    if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_DROPZONE"):
+        dz_raw = (os.getenv("PHOTOBOOTH_DROPZONE_DIR") or "").strip()
+        if dz_raw:
+            dz = Path(dz_raw).expanduser().resolve()
+            _console_log(f"dropzone: ON → {dz}")
+        else:
+            _console_log("dropzone: ERROR — enabled but PHOTOBOOTH_DROPZONE_DIR is empty")
+    else:
+        _console_log("dropzone: OFF (set PHOTOBOOTH_COPY_FINAL_TO_DROPZONE=1 and PHOTOBOOTH_DROPZONE_DIR)")
 
 
 def _unlink_preview_best_effort(path: Path) -> None:
@@ -531,25 +595,8 @@ def _compose_final_body(payload: FinalCreate) -> dict:
             logger.warning("print-queue copy skipped: %s", e)
             _console_log(f"print-queue FAILED: {e}")
 
-    # Optional: copy final to an external folder watched by another printer utility (in addition to print-queue).
-    if _env_truthy("PHOTOBOOTH_COPY_FINAL_TO_DROPZONE"):
-        dz_raw = (os.getenv("PHOTOBOOTH_DROPZONE_DIR") or "").strip()
-        if not dz_raw:
-            logger.warning(
-                "PHOTOBOOTH_COPY_FINAL_TO_DROPZONE is set but PHOTOBOOTH_DROPZONE_DIR is empty — skipping dropzone copy"
-            )
-            _console_log("dropzone SKIPPED: PHOTOBOOTH_DROPZONE_DIR is empty (check .env.standalone)")
-        else:
-            try:
-                dz = Path(dz_raw).expanduser().resolve()
-                dz.mkdir(parents=True, exist_ok=True)
-                dest = dz / f"{final_path.stem}_{uuid4().hex[:8]}{final_path.suffix}"
-                shutil.copy2(final_path, dest)
-                logger.info("dropzone: copied final to %s", dest)
-                _console_log(f"dropzone OK: copied → {dest}")
-            except OSError as e:
-                logger.warning("dropzone copy skipped: %s", e)
-                _console_log(f"dropzone FAILED: {e} (check path exists, Drive synced, permissions)")
+    # Optional: copy final to an external folder (e.g. Google Drive) — see startup env snapshot + logs here.
+    _copy_final_to_dropzone_with_logging(final_path, payload.image_id)
 
     final_url = (
         f"/finals/{session_folder}/{final_path.name}"
