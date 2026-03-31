@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+expected_email="padhu4ever@gmail.com"
+alt_email="13140059+paddyind@users.noreply.github.com"
+email="$(git config --get user.email || true)"
+
+if [[ "$email" != "$expected_email" && "$email" != "$alt_email" ]]; then
+  echo "ERROR: Wrong git user.email for this personal repo."
+  echo "Expected: $expected_email (or $alt_email)"
+  echo "Current : ${email:-<unset>}"
+  echo ""
+  echo "Fix:"
+  echo "  git config --local user.name \"Padmanaban Varatharajan\""
+  echo "  git config --local user.email \"$expected_email\""
+  echo "  gh auth status"
+  exit 1
+fi

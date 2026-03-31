@@ -7,7 +7,7 @@ services:
       - DATA_DIR=/app/data
       - FRAMES_DIR=/app/shared/frames
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "${API_PORT:-3201}:8000"
     volumes:
       - ./apps/api:/app/apps/api
       - ./data:/app/data
@@ -18,11 +18,11 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     ports:
-      - "${WEB_PORT:-3000}:80"
+      - "${WEB_PORT:-3200}:80"
     volumes:
       - ./apps/web/src:/usr/share/nginx/html:ro
     environment:
-      - VITE_API_BASE=http://localhost:${API_PORT:-8000}
+      - VITE_API_BASE=http://localhost:${API_PORT:-3201}
     depends_on:
       - backend
 

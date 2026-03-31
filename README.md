@@ -27,19 +27,19 @@ Consumer-friendly photo booth platform for phone/tablet capture, frame overlays,
    - `cp .env.example .env`
 2. Start stack:
    - `docker compose up --build`
-3. Open:
-   - Web UI: `http://localhost:3000`
-   - API: `http://localhost:8000/docs`
+3. Open (default **host** ports from `.env`; see `observability-platform/docs/ARCHITECTURE.md`):
+   - Web UI: `http://localhost:3200`
+   - API: `http://localhost:3201/docs`
 
-**Web UI (default):** the **Debug logs** block is **fully hidden** (clean layout). Other controls stay **visible**; **Clean saved files** is **disabled** until you opt in with **`PHOTOBOOTH_SHOW_CLEANUP=1`** in `prepare-www` (mobile) or **`?debug=1`**. Developers: **`?debug=1`** or **`#debug`** shows the debug panel and verbose logging. **Standalone (Mac/Windows):** **`./scripts/run-api-standalone.sh`** / **`.bat`**, web app → **`http://<this-pc>:8001`** (or Docker on 8000).
+**Web UI (default):** the **Debug logs** block is **fully hidden** (clean layout). Other controls stay **visible**; **Clean saved files** is **disabled** until you opt in with **`PHOTOBOOTH_SHOW_CLEANUP=1`** in `prepare-www` (mobile) or **`?debug=1`**. Developers: **`?debug=1`** or **`#debug`** shows the debug panel and verbose logging. **Standalone (Mac/Windows):** **`./scripts/run-api-standalone.sh`** / **`.bat`**, API → **`http://<this-pc>:8001`** by default (separate from Docker).
 
-## API: Docker (port 8000) + standalone (port 8001) on one machine
+## API: Docker (host ports **3200** / **3201**) + standalone (port **8001**) on one machine
 
 Use **Docker** for the normal stack and **standalone** for a second API process (e.g. compare behavior or run without Docker). Both listen on **`0.0.0.0`**, work **offline on a LAN**, and can run **at the same time** on different ports.
 
 | Mode | Port (default) | Data directory | How |
 |------|----------------|----------------|-----|
-| **Docker** `backend` | **8000** (`API_PORT` in `.env`) | Host `./data` → container `/app/data` | `docker compose up -d` |
+| **Docker** `web` / `backend` | **`3200`** / **`3201`** on host (`WEB_PORT` / `API_PORT` in `.env`; container listens on 80 / 8000) | Host `./data` → container `/app/data` | `docker compose up -d` |
 | **Standalone** (host Python) | **8001** | `./data-standalone` | Scripts below |
 
 **Why two data folders?** If both APIs run together, sharing one `./data` can mix uploads/previews. Standalone defaults to **`data-standalone/`** (gitignored) so they stay isolated.
@@ -62,7 +62,7 @@ API_PORT=8002 DATA_DIR="$PWD/data-alt" ./scripts/run-api-standalone.sh
 PHOTOBOOTH_PRINTER_NAME="EPSON L3250 Series" ./scripts/run-api-standalone.sh
 ```
 
-**Port (default `API_PORT=8001`):** by default the standalone server **keeps that port** — it **stops processes listening on `API_PORT`**, then binds there (Windows and Mac/Linux), so **`PHOTOBOOTH_API_BASE`** can stay `http://<LAN>:8001` without rebuilding the app. **Legacy:** set **`PHOTOBOOTH_PORT_FALLBACK=1`** to scan 8002, 8003, … when busy (then update the phone URL). Choose another fixed port: `API_PORT=8010 ./scripts/run-api-standalone.sh`. With **`PHOTOBOOTH_PORT_FALLBACK=1`**, **`PHOTOBOOTH_STRICT_PORT=1`** still means “fail if `API_PORT` busy” instead of scanning.
+**Port (default `API_PORT=8001`):** by default the standalone server **keeps that port** — it **stops processes listening on `API_PORT`**, then binds there (Windows and Mac/Linux), so **`PHOTOBOOTH_API_BASE`** can stay `http://<LAN>:8001` without rebuilding the app. **Legacy:** set **`PHOTOBOOTH_PORT_FALLBACK=1`** to scan 8002, 8003, … when busy (then update the phone URL). Choose another fixed port: `API_PORT=8020 ./scripts/run-api-standalone.sh`. With **`PHOTOBOOTH_PORT_FALLBACK=1`**, **`PHOTOBOOTH_STRICT_PORT=1`** still means “fail if `API_PORT` busy” instead of scanning.
 
 If you still need to free a port manually: **macOS/Linux** `lsof -nP -iTCP:8001` then `kill <pid>` (or `kill -9 <pid>`). **Windows** `netstat -ano | findstr :8001` then `taskkill /PID <pid> /F`.
 
@@ -87,7 +87,7 @@ If you still need to free a port manually: **macOS/Linux** `lsof -nP -iTCP:8001`
 
 - **Default:** the server uses **`API_PORT` (8001)** and clears anything already listening on that port — no silent switch to 8002.
 - **Legacy 8002+:** set **`PHOTOBOOTH_PORT_FALLBACK=1`** in `.env.standalone` if you want the old scan behavior.
-- **Different fixed port:** `set API_PORT=8010` then `scripts\run-api-standalone.bat`.
+- **Different fixed port:** `set API_PORT=8020` then `scripts\run-api-standalone.bat`.
 
 **If you still need to free a port manually (Windows)**
 
@@ -115,28 +115,28 @@ Other env vars: `set DATA_DIR=D:\pb-data`, `set PHOTOBOOTH_*` before `run-api-st
 
 ### Run Docker and standalone together
 
-1. Terminal A: `docker compose up -d` → API **`http://<LAN-IP>:8000`**
+1. Terminal A: `docker compose up -d` → API **`http://<LAN-IP>:3201`**
 2. Terminal B: `./scripts/run-api-standalone.sh` → API **`http://<LAN-IP>:8001`**
 3. Health checks (on the host or another device on the same network):
-   - `curl http://127.0.0.1:8000/health`
+   - `curl http://127.0.0.1:3201/health`
    - `curl http://127.0.0.1:8001/health`
 
 No internet required; phones only need the same Wi‑Fi / hotspot as the computer.
 
-### Mobile APK: point at Docker **8000** vs standalone (**8001** by default)
+### Mobile APK: point at Docker **3201** vs standalone (**8001** by default)
 
 The app’s API URL is baked in at **`prepare-www`** / CI time (`PHOTOBOOTH_API_BASE`).
 
 **Full booth build (LAN URL + physical printer, no browser print tab):** see **`apps/mobile/BUILD.md`** — copy **`apps/mobile/env.build.example` → `env.build`**, set **`PHOTOBOOTH_API_BASE`**, then run **`build-booth.sh`** (Mac/Linux) or **`build-booth.bat`** (Windows).
 
-- **Docker backend:** `http://<your-pc-LAN-ip>:8000`
+- **Docker backend:** `http://<your-pc-LAN-ip>:3201`
 - **Standalone backend:** `http://<your-pc-LAN-ip>:8001` (or your **`API_PORT`**) — default behavior **pins** that port by clearing listeners. Only use **8002+** if you opted into **`PHOTOBOOTH_PORT_FALLBACK=1`** and the console shows a different port.
 
 Same GitHub **Run workflow** twice with different `api_base_url`, or locally:
 
 ```bash
 cd apps/mobile
-PHOTOBOOTH_API_BASE=http://192.168.12.34:8000 npm run prepare-www && npx cap sync android
+PHOTOBOOTH_API_BASE=http://192.168.12.34:3201 npm run prepare-www && npx cap sync android
 # vs
 PHOTOBOOTH_API_BASE=http://192.168.12.34:8001 npm run prepare-www && npx cap sync android
 ```
@@ -276,6 +276,14 @@ Optional: **`PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT=1`** on mobile so only the q
 
 **Why not inside the container?** Linux containers do not see Windows/macOS printer drivers; the watcher must run on the OS that owns the printer.
 
+## Observability
+This repo can be monitored using the shared `observability-platform` Docker add-on.
+
+Baseline monitoring (uptime + latency) uses the platform’s **blackbox-exporter** to probe backend health:
+- `photo-booth`: `GET /health`
+
+See `OBSERVABILITY.md` in this repo for exact onboarding steps (including joining the shared Docker network `obs_net`).
+
 ## CI/CD (Mobile APK + IPA)
 
 This repo includes a GitHub Actions workflow: `.github/workflows/mobile-build.yml`.
@@ -306,7 +314,7 @@ Local `prepare-www` example:
 cd apps/mobile
 PHOTOBOOTH_FS_DIRECTORY=EXTERNAL_STORAGE \
 PHOTOBOOTH_SAVE_PATH=Download \
-PHOTOBOOTH_API_BASE=http://192.168.1.10:8000 \
+PHOTOBOOTH_API_BASE=http://192.168.1.10:3201 \
 PHOTOBOOTH_REAR_PRINT_DELAY_MS=10000 \
 PHOTOBOOTH_SUPPRESS_REAR_BROWSER_PRINT=0 \
 PHOTOBOOTH_DEBUG=0 \
@@ -322,7 +330,7 @@ CI warm-up:
 
 Local Docker Desktop:
 - When you test mobile apps locally, run `docker compose up -d backend web` first so the phone/tablet can reach the latest API.
-- For mobile testing on same Wi-Fi, set `PHOTOBOOTH_API_BASE` (or workflow `api_base_url`) to `http://<your-laptop-lan-ip>:8000`.
+- For mobile testing on same Wi-Fi, set `PHOTOBOOTH_API_BASE` (or workflow `api_base_url`) to `http://<your-laptop-lan-ip>:3201` (Docker default API host port).
 
 ### Notes about iOS IPA
 
