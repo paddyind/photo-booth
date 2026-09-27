@@ -470,23 +470,84 @@ The standalone script prints the **LAN IP** at startup — use that URL for mobi
 
 #### Multi-Device Simultaneous Testing
 
-| Device | URL | Notes |
-|--------|-----|-------|
-| **Laptop browser** | `http://localhost:3200` | Uses webcam, forced front camera |
-| **Phone (same Wi-Fi)** | `http://<LAN-IP>:3200` | Docker web UI; or `:8001` standalone |
-| **Tablet (same Wi-Fi)** | `http://<LAN-IP>:3200` | Same as phone |
-| **Mobile APK** | Baked-in `PHOTOBOOTH_API_BASE` | Use `update-mobile-endpoint.sh` to change |
+| Device | HTTP (laptop only) | HTTPS (mobile camera) | Notes |
+|--------|-------|-------|-------|
+| **Laptop browser** | `http://localhost:3200` | `https://localhost:3443` | Webcam works on both |
+| **Android (Chrome)** | ❌ Camera blocked | `https://<LAN-IP>:3443` | Must accept cert first |
+| **iPad (Safari)** | ❌ Camera blocked | `https://<LAN-IP>:3443` | Must accept cert first |
+| **Mobile APK/IPA** | Baked-in endpoint | Baked-in endpoint | Use `update-mobile-endpoint.sh` |
+| **Cloud backend** | N/A | `https://<cloud-run-url>` | Auto-HTTPS, no certs needed |
+
+> **Why HTTPS for mobile?** Mobile browsers block `getUserMedia` (camera access) on non-`localhost` HTTP origins. The HTTPS proxy script solves this for LAN testing.
 
 **Find your LAN IP:**
 ```bash
 # Mac:
-ifconfig en0 | grep "inet "
+ipconfig getifaddr en0
 # Or from standalone script output (prints LAN: line)
-# Or:
-python3 scripts/standalone_preflight.py lan-ip
 ```
 
-All devices on the **same Wi-Fi / hotspot** can access the API simultaneously. No internet required.
+#### Mobile Browser Testing (Android + iPad)
+
+Camera access on mobile requires HTTPS. Start the HTTPS proxy:
+
+```bash
+# 1. Ensure Docker stack is running
+docker compose up -d
+
+# 2. Start HTTPS proxies (Web UI :3443, API :3444)
+./scripts/start-https-proxy.sh
+```
+
+**On Android (Chrome):**
+1. Open `https://<LAN-IP>:3444/health` → tap **Advanced** → **Proceed** (trusts API cert)
+2. Open `https://<LAN-IP>:3443` → accept cert → allow camera
+3. Full flow: Capture → Select frame → Prepare Final → Download
+
+**On iPad (Safari):**
+1. Open `https://<LAN-IP>:3444/health` → **Show Details** → **visit this website**
+2. Open `https://<LAN-IP>:3443` → accept cert → allow camera
+3. Full flow: same as Android
+
+> You only accept the certificate **once per browser session**. Two accepts needed (one for web UI port, one for API port) because they run on different ports.
+
+#### Native App Testing (APK / IPA via GitHub Actions)
+
+The GHA workflow `Mobile Build (APK + IPA)` builds installable packages with the API endpoint baked in.
+
+**Trigger a build:**
+1. Go to **GitHub → Actions → "Mobile Build (APK + IPA)" → Run workflow**
+2. Set inputs:
+   - `api_base_url`: `https://<LAN-IP>:3444` (local) or `https://<cloud-run-url>` (cloud)
+   - `build_apk`: ✅ (Android)
+   - `build_ios_simulator_app`: ✅ (iOS Simulator)
+3. Download artifacts from the completed run
+
+**Install APK on Android:**
+```bash
+# Option A: ADB (if Android SDK installed)
+adb install photo-booth-app-*.apk
+
+# Option B: Transfer via Google Drive, email, or USB
+# Then tap the APK on the phone → Install → Open
+```
+
+**Install iOS Simulator .app:**
+```bash
+# Unzip the artifact, then:
+xcrun simctl install booted path/to/App.app
+xcrun simctl launch booted com.example.photobooth
+```
+
+**Quick endpoint update (no full rebuild):**
+```bash
+# Just re-bake the endpoint and sync:
+./scripts/update-mobile-endpoint.sh https://<new-url>
+cd apps/mobile && npx cap sync android ios
+# Then rebuild APK in Android Studio or run in Xcode
+```
+
+All devices on the **same Wi-Fi / hotspot** can access the API simultaneously. No internet required for LAN mode.
 
 ### Phase 2: Cloud Hosting (Firebase + GCP)
 
