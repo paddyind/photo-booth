@@ -374,12 +374,119 @@ All v1 features are **complete and working end-to-end** (tagged `v1.0.0`).
 ## v2.0 Roadmap — Commercial SaaS Edition
 
 ### Phase 1: Laptop-Testable Web App
-- Validate full capture → preview → final flow from laptop browser (webcam)
-- Add `docker-compose.dev.yml` with hot-reload for API + web
-- Add `/api/v1/` prefix for versioned endpoints
-- Replace in-memory `JOBS` dict with SQLite for persistence
-- Add basic API tests (`pytest` + `httpx`)
-- One-command dev start: `make dev`
+
+#### Laptop Browser Testing (No Phone Required)
+
+Open **`http://localhost:3200`** in Chrome/Safari on your laptop. The web UI uses the laptop webcam (forced to front camera on desktop). Full flow:
+
+1. **Start the stack:**
+   ```bash
+   docker compose up --build -d
+   # Verify:
+   curl http://localhost:3201/health
+   curl http://localhost:3200/   # should return HTML
+   ```
+
+2. **In the browser** at `http://localhost:3200`:
+   - Allow camera access when prompted
+   - Enter a name in the name field
+   - Click **Capture** → 10s pose countdown → snapshot
+   - Select a frame from the dropdown
+   - Click **Prepare Final** → generates final composite
+   - Download or print the final image
+
+3. **Debug mode** (shows verbose logs + cleanup controls):
+   - Navigate to `http://localhost:3200?debug=1`
+
+#### API Endpoint Testing (curl)
+
+All endpoints are available at `http://localhost:3201` (Docker) or `http://localhost:8001` (standalone).
+
+| # | Endpoint | Method | Test Command |
+|---|----------|--------|-------------|
+| 1 | Health check | `GET /health` | `curl http://localhost:3201/health` |
+| 2 | Available options | `GET /options` | `curl http://localhost:3201/options` |
+| 3 | List frames | `GET /frames?size=4x6` | `curl "http://localhost:3201/frames?size=4x6"` |
+| 4 | Frame template | `GET /frames/template/{size}/{id}` | `curl -o frame.png http://localhost:3201/frames/template/4x6/story-memories` |
+| 5 | Upload & preview | `POST /compose/preview` | `curl -X POST http://localhost:3201/compose/preview -F "image=@photo.jpg" -F "frame_id=story-memories" -F "size=4x6" -F "orientation=portrait" -F "display_name=Test"` |
+| 6 | Re-preview (by ID) | `POST /compose/preview-from-id` | `curl -X POST http://localhost:3201/compose/preview-from-id -H "Content-Type: application/json" -d '{"image_id":"...","frame_id":"story-memories","size":"4x6","orientation":"portrait"}'` |
+| 7 | Final output | `POST /compose/final` | `curl -X POST http://localhost:3201/compose/final -H "Content-Type: application/json" -d '{"image_id":"...","frame_id":"story-memories","size":"4x6","orientation":"portrait","output_format":"jpeg"}'` |
+| 8 | Download preview | `GET /previews/{session}/{file}` | URL from step 5 response |
+| 9 | Download final | `GET /finals/{session}/{file}` | URL from step 7 response |
+| 10 | Print status | `GET /print/status` | `curl http://localhost:3201/print/status` |
+| 11 | List jobs | `GET /jobs` | `curl http://localhost:3201/jobs` |
+| 12 | Create print job | `POST /jobs/print` | `curl -X POST http://localhost:3201/jobs/print -H "Content-Type: application/json" -d '{"image_id":"...","frame_id":"story-memories","size":"4x6"}'` |
+| 13 | Upload frame | `POST /frames/upload` | `curl -X POST http://localhost:3201/frames/upload -F "size=4x6" -F "frame_name=my-frame" -F "frame_file=@frame.png"` |
+| 14 | Admin cleanup | `POST /admin/cleanup` | `curl -X POST "http://localhost:3201/admin/cleanup?days=2"` |
+| 15 | Swagger docs | `GET /docs` | Open `http://localhost:3201/docs` in browser |
+
+#### Mobile App: Update API Endpoint Only
+
+When switching between Docker (`3201`), standalone (`8001`), or a cloud URL, use the quick endpoint update script — **no full rebuild needed**:
+
+```bash
+# Point mobile at Docker backend (LAN IP):
+./scripts/update-mobile-endpoint.sh http://192.168.1.2:3201
+
+# Point mobile at standalone backend:
+./scripts/update-mobile-endpoint.sh http://192.168.1.2:8001
+
+# Point mobile at cloud (future v2):
+./scripts/update-mobile-endpoint.sh https://photo-booth-api-xxxxx.run.app
+
+# Then sync to native projects:
+cd apps/mobile && npx cap sync android ios
+# Build APK in Android Studio or run in Xcode
+```
+
+**Verify the baked-in endpoint:**
+```bash
+grep PHOTOBOOTH_API_BASE apps/mobile/www/index.html
+```
+
+**Full rebuild** (with all env settings from `env.build`):
+```bash
+cd apps/mobile
+cp env.build.example env.build
+# Edit env.build → set PHOTOBOOTH_API_BASE=http://<your-LAN-IP>:<port>
+./build-booth.sh
+```
+
+**CI/CD (GitHub Actions):** Trigger `.github/workflows/mobile-build.yml` with `api_base_url` input set to the target URL. The workflow runs `prepare-www` + `cap sync` + builds APK/IPA artifacts.
+
+#### Standalone Mode (No Docker)
+
+```bash
+# Mac/Linux:
+chmod +x scripts/*.sh
+./scripts/run-api-standalone.sh
+# API on http://<LAN-IP>:8001, web at same port
+
+# Windows:
+scripts\run-api-standalone.bat
+```
+
+The standalone script prints the **LAN IP** at startup — use that URL for mobile testing.
+
+#### Multi-Device Simultaneous Testing
+
+| Device | URL | Notes |
+|--------|-----|-------|
+| **Laptop browser** | `http://localhost:3200` | Uses webcam, forced front camera |
+| **Phone (same Wi-Fi)** | `http://<LAN-IP>:3200` | Docker web UI; or `:8001` standalone |
+| **Tablet (same Wi-Fi)** | `http://<LAN-IP>:3200` | Same as phone |
+| **Mobile APK** | Baked-in `PHOTOBOOTH_API_BASE` | Use `update-mobile-endpoint.sh` to change |
+
+**Find your LAN IP:**
+```bash
+# Mac:
+ifconfig en0 | grep "inet "
+# Or from standalone script output (prints LAN: line)
+# Or:
+python3 scripts/standalone_preflight.py lan-ip
+```
+
+All devices on the **same Wi-Fi / hotspot** can access the API simultaneously. No internet required.
 
 ### Phase 2: Cloud Hosting (Firebase + GCP)
 
