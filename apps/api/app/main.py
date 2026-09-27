@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from .services.compositor import PRINT_PRESETS, compose_image, get_canvas_config
 
-app = FastAPI(title="Photo Booth API", version="0.1.0")
+app = FastAPI(title="Photo Booth API", version="1.0.0")
 
 
 app.add_middleware(

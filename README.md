@@ -1,13 +1,24 @@
 # Photo Booth
 
+> **v1.0.0 — Personal Edition**
+
 Consumer-friendly photo booth platform for phone/tablet capture, frame overlays, preview saves, and managed printing.
 
 ## Goals
 
+### v1 (Personal Edition) ✅
 - Keep legacy `photobooth` implementation as stable backup.
 - Build a new modular project for collaboration and enhancements.
 - Support iOS/Android browser-based capture on same WiFi network.
 - Add frame packs, preview workflow, print queue, and admin operations.
+
+### v2 (SaaS — Commercial Edition) 🚧
+- Cloud-host on Firebase + GCP for multi-device access over the internet.
+- Add authentication (Firebase Auth) and multi-tenancy (per-user events).
+- Add subscription billing (Razorpay) with free and paid tiers.
+- Laptop-testable web app (no phone/APK required for dev).
+- Automated CI/CD for web, API, and mobile deployments.
+- India-first go-to-market targeting event photographers and agencies.
 
 ## Architecture
 
@@ -340,3 +351,78 @@ Producing a signed `.ipa` requires signing credentials. The workflow includes a 
 - `IOS_BUNDLE_ID`
 
 Until those signing details are wired to your exact Xcode/Capacitor project, iOS Simulator artifacts are the reliable option for testing.
+
+## v1.0.0 — Status Summary
+
+All v1 features are **complete and working end-to-end** (tagged `v1.0.0`).
+
+| Area | What's Shipped |
+|------|----------------|
+| **Backend** | FastAPI + Pillow compositor, 15 REST endpoints, health/print-status APIs |
+| **Web UI** | Single-file PWA-ready (64 KB), dark theme, camera capture, frame selection, preview/final workflow |
+| **Mobile** | Capacitor Android APK + iOS Simulator, native filesystem saves, dated event folders |
+| **Frames** | 6 packs × 3 sizes (4×6, 5×7, 8×11), auto-fit (contain/cover/auto), custom upload |
+| **Printing** | CUPS/Windows integration, queue/archive mode, dropzone (Google Drive), print status feedback |
+| **Deployment** | Docker + standalone dual-mode, 20 cross-platform scripts, dual data isolation |
+| **CI/CD** | GitHub Actions mobile build (APK + IPA), configurable env injection |
+| **Observability** | Prometheus/Grafana integration, health probes, connectivity diagnostics |
+
+**Limitations (v1):** No auth, no cloud hosting, no billing, single-tenant, in-memory job queue, local filesystem only.
+
+---
+
+## v2.0 Roadmap — Commercial SaaS Edition
+
+### Phase 1: Laptop-Testable Web App
+- Validate full capture → preview → final flow from laptop browser (webcam)
+- Add `docker-compose.dev.yml` with hot-reload for API + web
+- Add `/api/v1/` prefix for versioned endpoints
+- Replace in-memory `JOBS` dict with SQLite for persistence
+- Add basic API tests (`pytest` + `httpx`)
+- One-command dev start: `make dev`
+
+### Phase 2: Cloud Hosting (Firebase + GCP)
+
+| Requirement | Solution | Free Tier |
+|-------------|----------|-----------|
+| Static web hosting | Firebase Hosting | 10 GB storage, 10 GB/mo transfer |
+| API server (Python) | Cloud Run | 2M requests/mo, 240K vCPU-sec |
+| Authentication | Firebase Auth | Unlimited (email/Google/Apple) |
+| Database (users/events/jobs) | Cloud Firestore | 1 GiB, 50K reads/day |
+| Image storage | Cloud Storage | 5 GB (Blaze plan) |
+| Networking | Firebase Hosting rewrites → Cloud Run | Built-in |
+
+**Key decision:** Dual-mode storage abstraction — API supports both local filesystem (offline events) and Cloud Storage (SaaS) via `PHOTOBOOTH_MODE=local|cloud`.
+
+### Phase 3: Authentication + Multi-Tenancy
+- Firebase Auth (email + Google sign-in)
+- `firebase-admin` SDK in FastAPI for token verification
+- Firestore data model: `users/{uid}/events/{eventId}/photos/{photoId}`
+- Per-user event isolation, configurable frame packs per event
+- Rate limiting by user tier (free: 50 photos/event, 1 device; pro: unlimited)
+- Admin dashboard for event list, photo gallery, usage stats
+
+### Phase 4: Subscription & Billing (Razorpay)
+
+| Plan | Price | Target |
+|------|-------|---------|
+| **Free** | ₹0 | Try before you buy |
+| **Single Event** | ₹999 | Birthday / small party |
+| **Pro Monthly** | ₹1,499/mo | Regular photographers |
+| **Pro Annual** | ₹11,999/yr | Agencies / venues (save 33%) |
+
+**Free tier:** Standard frames (3), 50 photos/event, 1 device, watermarked downloads.  
+**Pro tier:** All frame packs, custom upload, print integration, branding, lead capture, analytics, unlimited photos, 5 devices.
+
+### Phase 5: CI/CD Automation
+- `deploy-web.yml` — Firebase Hosting deploy on push to `main`
+- `deploy-api.yml` — Cloud Run deploy on push to `main`
+- `pytest` CI gate before deploy
+- Playwright e2e tests (laptop browser: capture → preview → final)
+- Staging environment (`photo-booth-staging`) with approval gates
+- Mobile workflow auto-injects cloud `PHOTOBOOTH_API_BASE`
+
+### Phase 6: Go-to-Market (India-First)
+- **Differentiators:** Offline-first (LAN), Android/web (no iPad required), INR pricing (10× cheaper than Snappic/CuratorLive), custom frames + branding, physical printer support
+- **Channels:** Product Hunt, Instagram/YouTube demos, WhatsApp photographer groups, WedMeGood/ShaadiSaga partnerships, direct outreach to studios in Tier 1-2 cities
+- **Target:** Indian event photographers, agencies, and venues
