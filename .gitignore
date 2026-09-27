@@ -13,10 +13,12 @@ data/originals/*
 data/previews/*
 data/finals/*
 data/archive/*
+data/PhotoBooth_*
 !data/originals/.gitkeep
 !data/previews/.gitkeep
 !data/finals/.gitkeep
 !data/archive/.gitkeep
+
 
 # Standalone uvicorn runtime (separate from Docker ./data when both run)
 data-standalone/
