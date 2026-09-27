@@ -270,13 +270,14 @@
       // Smart API port detection:
       //   Docker web (port 3200)       → API on 3201
       //   HTTPS proxy web (port 3443)  → API on 3444 (same protocol)
+      //   Cloud Run / Standard (80/443)→ API co-located on same origin
       //   Standalone  (port 8001)      → API co-located on same origin
       //   Direct uvicorn dev           → fallback to 8000
       const API_BASE = window.PHOTOBOOTH_API_BASE || (() => {
         const p = location.port;
         if (p === "3200") return `${location.protocol}//${location.hostname}:3201`;
         if (p === "3443") return `${location.protocol}//${location.hostname}:3444`;
-        if (p === "8001") return `${location.protocol}//${location.hostname}:8001`;
+        if (p === "8001" || p === "" || p === "80" || p === "443") return location.origin;
         return `${location.protocol}//${location.hostname}:8000`;
       })();
       // Mobile builds can inject this to opt-in to showing 8x11.

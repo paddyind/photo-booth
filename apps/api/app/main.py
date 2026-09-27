@@ -714,3 +714,13 @@ def cleanup_runtime(days: int = 2) -> dict:
         sweep_folder(session_dir / "finals", "finals")
 
     return {"ok": True, "removed": removed, "threshold": threshold.isoformat()}
+
+
+# Optionally serve the static web UI (Cloud Run single-container or standalone)
+WEB_DIR = Path(os.getenv("WEB_DIR", "")).resolve() if os.getenv("WEB_DIR") else None
+if WEB_DIR and WEB_DIR.is_dir() and (WEB_DIR / "index.html").is_file():
+    from fastapi.staticfiles import StaticFiles
+
+    _console_log(f"Serving static web UI from {WEB_DIR}")
+    app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
+
