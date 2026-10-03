@@ -1,4 +1,9 @@
-fastapi
-uvicorn[standard]
-pillow
-python-multipart
+# Runtime dependencies for the Photo Booth API.
+# Pinned to the exact versions running in the verified Docker image (2026-10-03)
+# so every build (local Docker, Cloud Run, standalone venv, CI) is reproducible.
+# Upgrade deliberately: bump a version, run `pytest apps/api/tests`, commit.
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+pillow==12.3.0
+python-multipart==0.0.32
+

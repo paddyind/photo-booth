@@ -1,0 +1,75 @@
+name: API CI
+
+# Runs the Photo Booth API test suite and verifies both container images build.
+# Gate for every change to the API, frames, or container definitions.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "shared/frames/**"
+      - "apps/web/src/**"
+      - "Dockerfile.cloudrun"
+      - ".github/workflows/api-ci.yml"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "shared/frames/**"
+      - "apps/web/src/**"
+      - "Dockerfile.cloudrun"
+      - ".github/workflows/api-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: api-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest (Python 3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # same as apps/api/Dockerfile and Dockerfile.cloudrun
+          cache: pip
+          cache-dependency-path: |
+            apps/api/requirements.txt
+            apps/api/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r apps/api/requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest apps/api/tests -v
+
+  docker-build:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build local API image (apps/api/Dockerfile)
+        run: docker build -f apps/api/Dockerfile -t photo-booth-api:ci .
+
+      - name: Build Cloud Run image (Dockerfile.cloudrun)
+        run: docker build -f Dockerfile.cloudrun -t photo-booth-cloudrun:ci .
+
+      - name: Smoke test Cloud Run image
+        run: |
+          docker run -d --name pb -p 8080:8080 photo-booth-cloudrun:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8080/health && break
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/health | grep -q '"status":"ok"'
+          curl -fsS http://localhost:8080/frames?size=4x6 | grep -q classic-white
+          curl -fsS -o /dev/null http://localhost:8080/   # static web UI served at root
+          docker logs pb
+          docker rm -f pb
+
