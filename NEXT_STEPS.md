@@ -52,139 +52,177 @@ Google Cloud's **Always Free Tier** is more than sufficient for development, pro
 
 ```mermaid
 flowchart TD
-    subgraph Foundation ["Local Foundation (Days 1–2)"]
-        P1["Phase 1: Safety Net<br/>• Pin requirements.txt<br/>• Pytest suite (compositor & API)<br/>• GitHub Actions CI"]
-        P2["Phase 2: Security & Storage Interface<br/>• PHOTOBOOTH_ADMIN_TOKEN<br/>• Upload limits (15 MB, magic bytes)<br/>• StorageService abstraction (Local vs GCS)"]
+    subgraph Foundation ["Local Foundation & Security (Completed)"]
+        P1["Phase 1: Safety Net ✅<br/>• Pin requirements.txt<br/>• Pytest suite (compositor & API)<br/>• GitHub Actions CI"]
+        P2["Phase 2: Security & Storage Abstraction ✅<br/>• PHOTOBOOTH_ADMIN_TOKEN<br/>• Upload limits (15 MB, magic bytes)<br/>• StorageService abstraction"]
     end
 
-    subgraph CloudReady ["Cloud Deployment (Days 3–4)"]
-        P3["Phase 3: Cloud Run + GCS<br/>• Setup GCP project & budget alert<br/>• GCS bucket with 24h preview lifecycle<br/>• Deploy single-container Cloud Run"]
-        P4["Phase 4: Mobile App Cloud Baking<br/>• Bake Cloud Run URL into Capacitor<br/>• Build & install Android APK<br/>• Verify mobile camera over 4G/Wi-Fi"]
+    subgraph Validation ["Validation & Multi-Tenancy (Active)"]
+        P3["Phase 3: GHA CI & Multi-Platform Validation 🚀<br/>• Push to origin & verify GHA CI<br/>• Build test artifacts (APK, iOS, Web)<br/>• Validate Laptop, Mobile, and iPad on LAN"]
+        P4["Phase 4: Multi-Tenancy & Data Isolation<br/>• Tenant/event namespace hierarchy<br/>• Cross-customer data isolation guards<br/>• GCS bucket naming, signed URLs & lifecycle design"]
     end
 
-    subgraph Polish ["Performance & SaaS Features (Subsequent)"]
-        P5["Phase 5: Performance Optimization<br/>• Threadpool async compose<br/>• LRU frame cache<br/>• Lightweight WebP thumbnails"]
-        P6["Phase 6: Multi-Tenancy & Auth<br/>• Firebase Auth (Google + Email)<br/>• Firestore tenant event isolation"]
-        P7["Phase 7: Subscriptions & Billing<br/>• Razorpay checkout & webhook<br/>• Free vs Pro quota enforcement"]
+    subgraph CloudReady ["Cloud Deployment (New Account)"]
+        P5["Phase 5: Cloud Run & GCS Deployment<br/>• New GCP account setup & ₹100 budget alert<br/>• Provision multi-tenant GCS bucket<br/>• Deploy Cloud Run container with Secret Manager<br/>• Promote mobile app to production HTTPS endpoint"]
     end
 
-    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+    subgraph Polish ["Performance & SaaS Features"]
+        P6["Phase 6: Performance & Print Quality<br/>• Threadpool async compose<br/>• LRU frame cache<br/>• Fix 5x7 & 8x11 aspect stretching"]
+        P7["Phase 7: Tenant Auth & Event Management<br/>• Firebase Auth (Google + Email)<br/>• Tenant event management dashboard"]
+        P8["Phase 8: Subscriptions & Billing<br/>• Razorpay checkout & webhook<br/>• Free vs Pro quota enforcement"]
+    end
+
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8
 ```
 
 ---
 
 ### Phase 1: Safety Net (Tests, CI, Dependency Pinning) — ✅ COMPLETED (2026-10-04)
 * **Goal**: Establish automated testing and reproducible builds so changes never break existing workflows.
-* **Status**: **100% Complete & Verified**.
+* **Status**: **100% Complete & Verified** (Commit `8a2e226`).
   - Pinned exact production versions in `apps/api/requirements.txt` (`fastapi==0.142.2`, `uvicorn[standard]==0.54.0`, `pillow==12.3.0`, `python-multipart==0.0.32`).
   - Added dev dependencies in `apps/api/requirements-dev.txt` (`pytest==8.4.2`, `httpx==0.28.1`).
-  - Created compositor unit test suite (`apps/api/tests/test_compositor.py`): tests canvas dimensions, EXIF transpose, contain/cover/auto fit modes, transparency detection, and safe area bounding boxes.
-  - Created REST API integration test suite (`apps/api/tests/test_api.py`): tests `/health`, `/options`, `/frames`, `/compose/preview`, `/compose/preview-from-id` (cache hit & miss), `/compose/final` (PNG, JPEG, PDF), `/jobs`, file traversal guards, and admin cleanup.
-  - Added GitHub Actions API CI workflow (`.github/workflows/api-ci.yml`) testing on Python 3.11 and smoke-testing Docker image builds.
-  - Test run: **79 passed, 8 xfailed** (the 8 xfails track the known 5x7 & 8x11 frame aspect stretching to be addressed in Phase 5).
-* **Next Active Phase**: **Phase 2: Security Hardening & Storage Abstraction**.
+  - Created compositor unit test suite (`apps/api/tests/test_compositor.py`).
+  - Created REST API integration test suite (`apps/api/tests/test_api.py`).
+  - Added GitHub Actions API CI workflow (`.github/workflows/api-ci.yml`).
+  - Test run: **79 passed, 8 xfailed** (tracking 5x7 and 8x11 aspect stretching to resolve in Phase 6).
 
 ---
 
-### Phase 2: Security Hardening & Storage Abstraction
-* **Goal**: Close vulnerabilities that block cloud exposure and prepare code for cloud storage.
-* **Tasks**:
-  1. **Admin Token Authentication**: Protect `POST /admin/cleanup`, `POST /frames/upload`, and `POST /jobs/*` with `Authorization: Bearer <PHOTOBOOTH_ADMIN_TOKEN>`. If unset, disable these routes by default.
-  2. **Upload Constraints**: Enforce max 15 MB upload limit, validate magic bytes (JPEG/PNG/WebP), and enforce Pillow `MAX_IMAGE_PIXELS` safety cap.
-  3. **Input Allowlist**: Strict regex validation for `size` (`PRINT_PRESETS`) and `frame_id` (`^[a-z0-9-]{1,40}$`) to prevent directory traversal.
-  4. **Storage Abstraction Interface**: Introduce `StorageService` interface (`apps/api/app/services/storage.py`) with:
-     * `save_original(image_id, data)`
-     * `save_preview(session, image_id, image)`
-     * `save_final(session, image_id, image, format)`
-     * `get_url(category, session, filename)`
-     * Implement `LocalStorageService` to preserve current on-disk behavior.
-  5. **Non-Root Container**: Update `apps/api/Dockerfile` and `Dockerfile.cloudrun` with non-root runtime user and proper `.dockerignore`.
-* **Verification**: Unauthenticated requests to `/admin/cleanup` return `401 Unauthorized`. File uploads > 15 MB return `413 Payload Too Large`.
+### Phase 2: Security Hardening & Storage Abstraction — ✅ COMPLETED (2026-10-04)
+* **Goal**: Close vulnerabilities that block cloud exposure and isolate filesystem concerns.
+* **Status**: **100% Complete & Committed** (Commit `1fe567d`).
+  - **Admin Token Authentication**: Protected `POST /admin/cleanup` and `POST /frames/upload` with `verify_admin_token` dependency (`Authorization: Bearer <PHOTOBOOTH_ADMIN_TOKEN>`). Secure-by-default: routes reject with `401 Unauthorized` if token is unset or invalid.
+  - **Upload Constraints**: Enforced 15 MB payload limit on photos and 5 MB on frame templates (`413 Payload Too Large`).
+  - **Magic Byte Validation**: Direct header inspection for JPEG (`\xff\xd8`), PNG (`\x89PNG`), WebP (`RIFF...WEBP`), returning `415 Unsupported Media Type` on mismatch. Strict PNG validation for frame templates.
+  - **Decompression Bomb Guard**: Pillow `Image.MAX_IMAGE_PIXELS = 50_000_000`.
+  - **Path Traversal Guards**: Strict regex allowlist on `frame_id` (`^[a-zA-Z0-9_-]{0,40}$`) and `size` against `PRINT_PRESETS`.
+  - **Storage Abstraction Interface**: Created `apps/api/app/services/storage.py` introducing `StorageService` ABC and `LocalStorageService` to decouple route handlers from disk operations.
+  - **Container Security**: Added non-root user `photobooth:photobooth` (UID 10001) to `apps/api/Dockerfile` and `Dockerfile.cloudrun`, plus added `.dockerignore`.
+  - **Environment Parity**: Synced all modifications across Windows and WSL repositories.
 
 ---
 
-### Phase 3: Cloud Run & GCS Deployment
-* **Goal**: Launch the production-grade, secure cloud backend with permanent storage.
+### Phase 3: GHA Pipeline Verification & Multi-Platform Validation — 🚀 ACTIVE NEXT PHASE
+* **Goal**: Verify GitHub Actions CI triggers properly on pushed commits, build downloadable artifacts, and validate the photo booth working across Laptop, Mobile (Android), and iPad before touching any cloud infrastructure.
 * **Tasks**:
-  1. **GCP Account & Project Setup**:
-     * Create personal GCP project (e.g., `photobooth-personal`).
-     * Set a **₹100 ($1)** monthly budget alert in Billing.
-     * Enable Cloud Run, Cloud Build, and Cloud Storage APIs.
-  2. **GCS Storage Integration**:
-     * Create bucket: `gsutil mb -l asia-south1 gs://<project-id>-photobooth-data`.
-     * Configure lifecycle rule: auto-delete `previews/*` after 1 day.
-     * Implement `GCSStorageService` in `apps/api/app/services/storage.py` using signed URLs when `PHOTOBOOTH_STORAGE=gcs`.
+  1. **Push Commits to Remote & Verify GHA**:
+     - Push commits `8a2e226` and `1fe567d` to `origin/main`.
+     - Confirm `.github/workflows/api-ci.yml` triggers automatically and passes all unit/integration tests and Docker image builds on GitHub's hosted runners.
+  2. **GHA Mobile & Web Artifact Pipeline**:
+     - Update `.github/workflows/mobile-build.yml` with default LAN endpoint (`http://192.168.1.2:3201`).
+     - Trigger workflow to build and upload downloadable artifacts:
+       * **Android Debug APK** (`photo-booth-app-apk`): Installable `.apk` for physical Android phones on Wi-Fi.
+       * **Web Bundle Artifact** (`photo-booth-web-bundle`): Configured static distribution for desktop/tablet browser testing.
+       * **iOS Simulator `.app`**: Validated artifact for iPad/iOS testing.
+  3. **Multi-Platform Device Validation Checklist**:
+     - **Laptop (Windows / Mac)**:
+       * Access `http://localhost:3200` (already verified working with active webcam and controls!).
+       * Test camera capture $\rightarrow$ frame selection $\rightarrow$ preview $\rightarrow$ download final.
+     - **Mobile Phone (Android)**:
+       * Install debug APK on phone connected to local Wi-Fi.
+       * Verify camera permission dialog, front/rear camera toggle, 10s pose countdown, frame overlay preview, and image saving to gallery.
+     * Alternatively, test via Chrome mobile at `http://192.168.1.2:3200`.
+     - **iPad / Tablet (iOS / iPadOS)**:
+       * Test web bundle or mobile app on iPad.
+       * Address iOS Safari secure-context requirement for `getUserMedia` (Capacitor native app operates in local secure context `https://localhost`, or use LAN proxy).
+       * Verify touch controls, landscape/portrait orientation switches, and canvas rendering.
+* **Verification**: All 3 devices (laptop, mobile phone, iPad) can capture, frame, and preview photos against the local backend.
+
+---
+
+### Phase 4: Multi-Tenancy & Data Isolation Architecture (Design & Storage Prep)
+* **Goal**: Establish strict tenant and event isolation so no 2 customers can ever view, query, or access each other's photos or sessions, before provisioning any cloud storage.
+* **Tasks**:
+  1. **Tenant & Event Data Partitioning**:
+     - Design storage namespace hierarchy:
+       ```
+       tenants/{tenant_id}/events/{event_id}/sessions/{session_id}/
+         ├── originals/   # Raw camera snapshots
+         ├── previews/    # Downscaled display compositions (24h retention)
+         └── finals/      # 300 DPI high-res print outputs
+       ```
+     - Inject `tenant_id` context into all API operations via header (`X-Tenant-ID`) or authenticated claims.
+     - Enforce tenant boundaries in `StorageService`: reading or listing files must strictly check that requested paths belong to the caller's tenant.
+  2. **GCS Bucket Architecture & Access Restrictions**:
+     - Standardized bucket naming: `gs://<project-prefix>-photobooth-data`.
+     - Private-by-default bucket policy (block all public read access).
+     - Fine-grained Signed URLs: Backend generates short-lived (15-minute) signed download URLs for previews and finals so GCS objects are never public.
+     - Automated lifecycle policy: GCS lifecycle rule automatically deletes `*/previews/*` after 24 hours, preventing storage accumulation in the free tier.
+* **Verification**: Architectural specification and test cases proving customer A cannot read or list customer B's session data.
+
+---
+
+### Phase 5: Google Cloud Setup (New Account) & Cloud Run / GCS Deployment
+* **Goal**: Provision the production cloud backend under a clean, dedicated Google Cloud account and deploy the container.
+* **Tasks**:
+  1. **New GCP Account Setup**:
+     - Create a dedicated Google Cloud account / project (separate email) to avoid mixing personal resources.
+     - Set a strict **₹100 ($1)** monthly budget alert in Billing to guarantee zero accidental spend.
+     - Enable Cloud Run, Cloud Build, and Cloud Storage APIs.
+  2. **GCS Provisioning**:
+     - Create bucket in `asia-south1` (Mumbai) or free-tier region following Phase 4 naming conventions.
+     - Apply 24h lifecycle deletion rule on previews.
+     - Implement `GCSStorageService` in `apps/api/app/services/storage.py` using signed URLs when `PHOTOBOOTH_STORAGE=gcs`.
   3. **Cloud Run Deployment**:
-     * Store `PHOTOBOOTH_ADMIN_TOKEN` in Google Secret Manager.
-     * Deploy using `scripts/deploy-cloudrun.sh` with 1 vCPU, 1 GiB memory, concurrency 4, min-instances 0, max-instances 2.
-     * Obtain global HTTPS URL: `https://photo-booth-api-<hash>.a.run.app`.
-* **Verification**: Visit `https://photo-booth-api-*.a.run.app` on mobile browser; capture photo, verify preview renders, verify photo persists in GCS bucket after container stops.
+     - Store `PHOTOBOOTH_ADMIN_TOKEN` securely in Google Secret Manager.
+     - Deploy using `scripts/deploy-cloudrun.sh` with 1 vCPU, 1 GiB memory, concurrency 4, min-instances 0, max-instances 2.
+     - Obtain global HTTPS URL: `https://photo-booth-api-<hash>.a.run.app`.
+  4. **Promote Mobile & Web Packages**:
+     - Update mobile build endpoint to Cloud Run HTTPS URL and verify camera and sync work over cellular (4G/5G).
+* **Verification**: Photos captured on mobile over 4G persist into GCS bucket partitioned by tenant.
 
 ---
 
-### Phase 4: Mobile App Baking & Real-Device Testing
-* **Goal**: Provide native Android APK and iOS apps that communicate with the cloud backend anywhere.
-* **Tasks**:
-  1. Update mobile endpoint configuration:
-     ```bash
-     ./scripts/update-mobile-endpoint.sh https://photo-booth-api-<hash>.a.run.app
-     ```
-  2. Run GitHub Actions workflow `Mobile Build (APK + IPA)` with the Cloud Run URL.
-  3. Download built APK to Android device (or run in iOS simulator).
-  4. Verify camera permissions, instant photo capture, frame selection, and download over cellular (4G/5G).
-* **Verification**: App operates independently of laptop Wi-Fi network.
-
----
-
-### Phase 5: Performance & Print Quality
+### Phase 6: Performance & Print Quality
 * **Goal**: Accelerate processing and resolve print aspect distortion.
 * **Tasks**:
-  1. **Non-Blocking Compositor**: Move `compose_image` execution to threadpool using FastAPI's `run_in_threadpool` so concurrent requests never block the event loop.
-  2. **LRU Frame Cache**: Cache decoded RGBA frame overlays and bounding boxes in memory to drop warm compose latency from 900 ms to < 200 ms.
-  3. **Lightweight Previews**: Downscale preview generation to 900 px max edge at quality 85 for ultra-fast mobile loading. Finals remain 300 DPI print quality.
-  4. **Aspect Ratio Correction**: Adjust 5x7 and 8x11 frames with proper letterboxing/scaling to eliminate the 5–9% image stretching.
-  5. **Indian Timezone Alignment**: Default `PHOTOBOOTH_TZ=Asia/Kolkata` for daily session folder organization.
+  1. **Non-Blocking Compositor**: Move `compose_image` to threadpool via FastAPI `run_in_threadpool`.
+  2. **LRU Frame Cache**: In-memory cache for decoded RGBA frames dropping latency to < 200 ms.
+  3. **Lightweight Previews**: Downscale preview generation to 900 px max edge at quality 85.
+  4. **Aspect Ratio Correction**: Correct 5x7 and 8x11 frames with proper scaling/letterboxing.
+  5. **Indian Timezone Alignment**: Default `PHOTOBOOTH_TZ=Asia/Kolkata`.
 * **Verification**: Benchmark test showing compose response under 300 ms for warm frames.
 
 ---
 
-### Phase 6: Multi-Tenancy & Authentication
-* **Goal**: Support multiple event photographers with isolated accounts.
+### Phase 7: Tenant Authentication & Event Management UI
+* **Goal**: Provide a web portal for event managers and photographers.
 * **Tasks**:
-  1. Integrate Firebase Authentication into Web UI (Email/Password + Google Sign-In).
-  2. Validate Firebase JWT tokens in FastAPI backend using `firebase-admin`.
-  3. Store tenant profiles, event configs, and photo metadata in Cloud Firestore under `tenants/{uid}/events/{eventId}/`.
-  4. Implement tier limits: Free (1 event, 50 photos) vs. Pro (unlimited events & photos).
-* **Verification**: Different user accounts cannot view or access each other's captured photos.
+  1. Integrate Firebase Authentication (Google Sign-In + Email/Password).
+  2. Validate Firebase JWT tokens in FastAPI backend.
+  3. Tenant event dashboard: create events, select frame templates, configure print sizes.
+* **Verification**: Photographers log in, configure an event, and view only their event gallery.
 
 ---
 
-### Phase 7: Subscriptions & Billing (Razorpay)
+### Phase 8: Commercial Subscriptions & Billing (Razorpay)
 * **Goal**: Monetize the platform for the Indian event market.
 * **Tasks**:
-  1. Implement Razorpay checkout modal for Single Event (₹999) and Monthly Pro (₹1,499).
-  2. Build webhook endpoint `/api/billing/webhook/razorpay` with cryptographic signature verification.
-  3. Automatically activate Pro subscription tier in Firestore upon payment success.
-* **Verification**: Test mode checkout triggers webhook, upgrading account to Pro tier.
+  1. Razorpay checkout modal for Single Event (₹999) and Monthly Pro (₹1,499).
+  2. Webhook endpoint `/api/billing/webhook/razorpay` with HMAC signature verification.
+  3. Automatic tier activation upon payment success.
+* **Verification**: Test mode checkout upgrades tenant account to Pro tier.
 
 ---
 
 ## 4. Quick Command Reference
 
 ```bash
-# === Local Docker Operations ===
+# === Local Stack & Testing ===
 cm up photo-booth                               # Start local stack
 cm test photo-booth                             # Validate local health endpoints
 docker compose logs -f backend                  # Follow backend API logs
 
-# === Test Suite (Phase 1) ===
+# === Test Suite ===
 pytest apps/api/tests/                          # Run unit & integration tests
 
-# === Cloud Deployment (Phase 3) ===
-gcloud auth login                               # Login with personal Google account
-gcloud config set project <your-project-id>     # Select GCP project
-CLOUDRUN_REGION=asia-south1 ./scripts/deploy-cloudrun.sh
+# === GitHub Actions & Artifacts ===
+git push origin main                            # Trigger GHA API CI workflow
+gh workflow run "Mobile Build (APK + IPA)"      # Trigger mobile/web artifact build
 
-# === Mobile Update (Phase 4) ===
-./scripts/update-mobile-endpoint.sh https://photo-booth-api-*.a.run.app
+# === Cloud Deployment (Phase 5) ===
+gcloud auth login                               # Login with new dedicated Google account
+gcloud config set project <new-project-id>      # Select GCP project
+CLOUDRUN_REGION=asia-south1 ./scripts/deploy-cloudrun.sh
 ```
