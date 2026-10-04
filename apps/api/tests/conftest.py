@@ -26,11 +26,20 @@ TEST_DATA_DIR = _TMP_ROOT / "data"
 TEST_FRAMES_DIR = _TMP_ROOT / "frames"
 shutil.copytree(FRAMES_SRC, TEST_FRAMES_DIR)
 
+TEST_ADMIN_TOKEN = "test-admin-secret-token"
+
 os.environ["DATA_DIR"] = str(TEST_DATA_DIR)
 os.environ["FRAMES_DIR"] = str(TEST_FRAMES_DIR)
+os.environ["PHOTOBOOTH_ADMIN_TOKEN"] = TEST_ADMIN_TOKEN
+
 # Copy-out features must stay off so tests never write outside the temp dir.
 for _var in ("PHOTOBOOTH_COPY_FINAL_TO_DROPZONE", "PHOTOBOOTH_COPY_FINAL_TO_PRINT_QUEUE", "WEB_DIR"):
     os.environ.pop(_var, None)
+
+# Initialize storage singleton to isolated test directory
+from apps.api.app.services.storage import LocalStorageService, reset_storage_service
+
+reset_storage_service(LocalStorageService(TEST_DATA_DIR))
 
 
 def make_jpeg(width: int = 640, height: int = 480, color=(200, 40, 40), exif_orientation: int | None = None) -> bytes:
@@ -54,6 +63,11 @@ def client():
 
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def admin_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
 
 
 @pytest.fixture(scope="session")
