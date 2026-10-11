@@ -12,9 +12,9 @@ on:
         default: true
         type: boolean
       build_ipa:
-        description: "Build iOS IPA (requires signing secrets). If secrets are missing, job will fail with a clear message."
+        description: "Build iOS IPA (builds signed IPA if secrets configured; otherwise builds unsigned IPA for sideloading/direct iPad installation)."
         required: false
-        default: false
+        default: true
         type: boolean
       build_ios_simulator_app:
         description: "Also build iOS Simulator .app artifact (does not require signing)."
@@ -107,7 +107,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: "tools platform-tools platforms;android-34 build-tools;34.0.0"
+          packages: "platform-tools platforms;android-34 build-tools;34.0.0"
 
       - name: Ensure @capacitor/android is installed
         run: |
@@ -292,7 +292,8 @@ jobs:
           if-no-files-found: error
 
   ios-ipa:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_ipa }}
+    name: iOS IPA (signed or unsigned)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ipa }}
     needs: validate-web-bundle
     runs-on: macos-latest
     steps:
@@ -315,13 +316,6 @@ jobs:
       - name: Verify mobile app scaffold exists
         run: |
           test -f "apps/mobile/package.json" || { echo "apps/mobile/package.json not found. Create a Capacitor mobile app in apps/mobile first."; exit 1; }
-
-      - name: Verify iOS signing secrets
-        run: |
-          if [ -z "${IOS_CERT_P12_BASE64}" ] || [ -z "${IOS_PROVISIONING_PROFILE_BASE64}" ] || [ -z "${IOS_BUNDLE_ID}" ]; then
-            echo "Missing signing secrets. Required: IOS_CERT_P12_BASE64, IOS_PROVISIONING_PROFILE_BASE64, IOS_BUNDLE_ID"
-            exit 1
-          fi
 
       - name: Install mobile dependencies
         run: |
@@ -357,107 +351,122 @@ jobs:
           test -f "Podfile.lock" || { echo "ERROR: Podfile.lock missing after pod install"; exit 1; }
           grep -q "Capacitor" Podfile.lock || { echo "ERROR: Capacitor pod missing in Podfile.lock"; exit 1; }
 
-      - name: Decode signing artifacts
+      - name: Build iOS IPA (signed or unsigned)
         env:
           IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
           IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
-        run: |
-          set -e
-          mkdir -p ~/ios-signing
-          echo "$IOS_CERT_P12_BASE64" | base64 --decode > ~/ios-signing/cert.p12
-          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > ~/ios-signing/profile.mobileprovision
-
-      - name: Build signed IPA
-        env:
-          IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
-          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-          IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+          IOS_CERT_P12_PASSWORD: ${{ secrets.IOS_CERT_P12_PASSWORD }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          IOS_EXPORT_METHOD: ${{ secrets.IOS_EXPORT_METHOD }}
         run: |
           set -euo pipefail
-
-          # Expected defaults (adjust these if your iOS project uses different names).
           IOS_DIR="apps/mobile/ios"
           WORKSPACE="$IOS_DIR/App/App.xcworkspace"
           SCHEME="App"
-          test -f "$WORKSPACE/contents.xcworkspacedata" || { echo "No .xcworkspace found at $WORKSPACE"; exit 1; }
+          mkdir -p artifacts
 
-          test -d "$IOS_DIR" || { echo "Expected iOS directory not found: $IOS_DIR"; exit 1; }
+          if [ -n "${IOS_CERT_P12_BASE64:-}" ] && [ -n "${IOS_PROVISIONING_PROFILE_BASE64:-}" ] && [ -n "${IOS_BUNDLE_ID:-}" ]; then
+            echo "=== Apple Signing Secrets Detected: Building Signed IPA ==="
+            mkdir -p ~/ios-signing
+            echo "$IOS_CERT_P12_BASE64" | base64 --decode > ~/ios-signing/cert.p12
+            echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > ~/ios-signing/profile.mobileprovision
 
-          CERT_P12="$HOME/ios-signing/cert.p12"
-          PROFILE_MOBILEPROVISION="$HOME/ios-signing/profile.mobileprovision"
+            PROFILE_NAME=$(python3 -c "
+import plistlib, subprocess, os
+p = os.path.expanduser('~/ios-signing/profile.mobileprovision')
+data = subprocess.check_output(['security', 'cms', '-D', '-i', p])
+plist = plistlib.loads(data)
+print(plist.get('Name', ''))
+")
+            if [ -z "$PROFILE_NAME" ]; then
+              echo "Could not determine provisioning profile Name."
+              exit 1
+            fi
 
-          if [ ! -f "$CERT_P12" ] || [ ! -f "$PROFILE_MOBILEPROVISION" ]; then
-            echo "Signing files missing in ~/ios-signing/. Check the 'Decode signing artifacts' step."
-            exit 1
+            mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+            cp ~/ios-signing/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+
+            KEYCHAIN=build.keychain-db
+            security create-keychain -p "" "$KEYCHAIN"
+            security default-keychain -s "$KEYCHAIN"
+            security unlock-keychain -p "" "$KEYCHAIN"
+            security import ~/ios-signing/cert.p12 -k "$KEYCHAIN" -P "${IOS_CERT_P12_PASSWORD:-}" -T /usr/bin/codesign || true
+
+            rm -rf "$IOS_DIR/build"
+            xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme "$SCHEME" \
+              -sdk iphoneos \
+              -configuration Release \
+              -archivePath "$IOS_DIR/build/$SCHEME.xcarchive" \
+              clean archive \
+              CODE_SIGN_STYLE=Manual \
+              DEVELOPMENT_TEAM="${IOS_TEAM_ID:-}" \
+              PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+
+            EXPORT_DIR="$IOS_DIR/build/export"
+            mkdir -p "$EXPORT_DIR"
+            cat > "$IOS_DIR/build/exportOptions.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>${IOS_EXPORT_METHOD:-ad-hoc}</string>
+  <key>signingStyle</key>
+  <string>manual</string>
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>${IOS_BUNDLE_ID}</key>
+    <string>$PROFILE_NAME</string>
+  </dict>
+</dict>
+</plist>
+EOF
+            xcodebuild \
+              -exportArchive \
+              -archivePath "$IOS_DIR/build/$SCHEME.xcarchive" \
+              -exportOptionsPlist "$IOS_DIR/build/exportOptions.plist" \
+              -exportPath "$EXPORT_DIR"
+
+            IPA_FILE=$(ls -1 "$EXPORT_DIR"/*.ipa | head -n 1)
+            cp "$IPA_FILE" "artifacts/photo-booth-app-signed-${{ github.run_number }}.ipa"
+            echo "Signed IPA built successfully."
+          else
+            echo "=== No Apple Signing Secrets Provided: Building Unsigned Device IPA ==="
+            echo "This IPA can be sideloaded directly onto an iPad via Sideloadly or AltStore."
+
+            rm -rf "$IOS_DIR/build"
+            mkdir -p "$IOS_DIR/build"
+            xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme "$SCHEME" \
+              -sdk iphoneos \
+              -configuration Debug \
+              -derivedDataPath "$IOS_DIR/build" \
+              clean build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY=""
+
+            APP_PATH=$(find "$IOS_DIR/build/Build/Products/Debug-iphoneos" -name "*.app" -maxdepth 1 | head -n 1)
+            if [ -z "$APP_PATH" ]; then
+              echo "ERROR: Built .app bundle not found in $IOS_DIR/build/Build/Products/Debug-iphoneos"
+              exit 1
+            fi
+
+            mkdir -p "$IOS_DIR/build/Payload"
+            cp -r "$APP_PATH" "$IOS_DIR/build/Payload/"
+            (cd "$IOS_DIR/build" && zip -r -q "photo-booth-app-unsigned-${{ github.run_number }}.ipa" Payload)
+            cp "$IOS_DIR/build/photo-booth-app-unsigned-${{ github.run_number }}.ipa" "artifacts/"
+            echo "Unsigned IPA built successfully: artifacts/photo-booth-app-unsigned-${{ github.run_number }}.ipa"
           fi
-
-          # Install provisioning profile
-          PROFILE_NAME="$(/usr/bin/python3 - <<'PY'\nimport plistlib, subprocess\nfrom pathlib import Path\np=Path.home()/'ios-signing'/'profile.mobileprovision'\ndata=subprocess.check_output(['security','cms','-D','-i',str(p)])\nplist=plistlib.loads(data)\nprint(plist.get('Name',''))\nPY\n)"
-          if [ -z "$PROFILE_NAME" ]; then
-            echo "Could not determine provisioning profile Name from mobileprovision."
-            exit 1
-          fi
-
-          mkdir -p ~/Library/MobileDevice/Provisioning\\ Profiles
-          cp "$PROFILE_MOBILEPROVISION" ~/Library/MobileDevice/Provisioning\\ Profiles/
-
-          # Create keychain and import certificate
-          KEYCHAIN=build.keychain-db
-          security create-keychain -p "" "$KEYCHAIN"
-          security default-keychain -s "$KEYCHAIN"
-          security unlock-keychain -p "" "$KEYCHAIN"
-
-          CERT_PASS="${IOS_CERT_P12_PASSWORD:-}"
-          security import "$CERT_P12" -k "$KEYCHAIN" -P "$CERT_PASS" -T /usr/bin/codesign || true
-
-          # Archive
-          rm -rf "$IOS_DIR/build"
-          xcodebuild \
-            -workspace "$WORKSPACE" \
-            -scheme "$SCHEME" \
-            -sdk iphoneos \
-            -configuration Release \
-            -archivePath "$IOS_DIR/build/$SCHEME.xcarchive" \
-            clean archive \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="${IOS_TEAM_ID:-}" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
-
-          # Export
-          EXPORT_DIR="$IOS_DIR/build/export"
-          mkdir -p "$EXPORT_DIR"
-          IOS_EXPORT_METHOD="${IOS_EXPORT_METHOD:-ad-hoc}"
-
-          cat > "$IOS_DIR/build/exportOptions.plist" <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>$IOS_EXPORT_METHOD</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>${IOS_BUNDLE_ID}</key>
-              <string>$PROFILE_NAME</string>
-            </dict>
-          </dict>
-          </plist>
-          EOF
-          xcodebuild \
-            -exportArchive \
-            -archivePath "$IOS_DIR/build/$SCHEME.xcarchive" \
-            -exportOptionsPlist "$IOS_DIR/build/exportOptions.plist" \
-            -exportPath "$EXPORT_DIR"
-
-          ls -la "$EXPORT_DIR"
 
       - name: Upload IPA artifact
-        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa-${{ github.run_number }}
-          path: apps/mobile/ios/build/export/*.ipa
+          name: photo-booth-app-ipa-${{ github.run_number }}
+          path: artifacts/*.ipa
+          if-no-files-found: error
 
