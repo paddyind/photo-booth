@@ -118,18 +118,20 @@ flowchart TD
      - Verified live on `http://localhost:3200` and synced to WSL container mount.
   2. **GHA Workflow Mobile Updates (Completed)**:
      - Updated `.github/workflows/mobile-build.yml` default and fallback endpoints to current Wi-Fi IP `http://192.168.1.9:3201`.
+     - **Fixed Android SDK Error**: Removed obsolete `'tools'` package from `android-actions/setup-android@v3` (which Google deprecated and removed from SDK repositories).
+     - **Added iPad IPA Artifact Build**: Enabled dual-mode iOS building in `mobile-build.yml`: builds signed `.ipa` if developer certificates are configured; otherwise automatically compiles and packages an **unsigned device `.ipa`** (`photo-booth-app-unsigned-<run>.ipa`) that can be installed on an iPad via Sideloadly or AltStore using a free personal Apple ID.
      - Added `photo-booth-web-bundle` artifact packaging to the workflow.
   3. **Docker Init Stability (Completed)**:
      - Added `init: true` to `docker-compose.yml` backend service, ensuring `tini` reaps child processes and prevents container zombie locks permanently.
 * **Next Active Execution Step**:
   1. **Trigger GHA Mobile Build**:
-     - Push current commits to `origin/main`.
+     - Push current commits to `origin/main` (Completed).
      - Dispatch `Mobile Build (APK + IPA)` workflow on GitHub Actions.
-     - Download generated `photo-booth-app-apk` and `photo-booth-web-bundle` artifacts.
+     - Download generated `photo-booth-app-apk`, `photo-booth-app-ipa` (for iPad), and `photo-booth-web-bundle` artifacts.
   2. **Multi-Platform Device Validation Checklist**:
      - **Laptop (Windows / Mac)**: `http://localhost:3200` (Verified working: live camera feed, options, and frames).
      - **Mobile Phone (Android)**: Install the GHA debug APK on phone connected to local Wi-Fi. Verify camera snapshot, 10s pose countdown, and frame composition. Use in-app `Server ⚙️` button if IP changes.
-     - **iPad / Tablet (iOS / iPadOS)**: Test web bundle or mobile app on iPad. Verify touch responsiveness, rotation, and preview rendering.
+     - **iPad / Tablet (iOS / iPadOS)**: Install the generated `.ipa` using Sideloadly (or test web bundle in Safari). Verify touch responsiveness, camera permissions, and preview rendering.
 * **Verification**: Photos captured on mobile and iPad connect to local Docker backend (`:3201`), compose with frames, and save to device gallery.
 
 ---
