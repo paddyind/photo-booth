@@ -195,11 +195,12 @@ jobs:
           cd apps/mobile/android
           ./gradlew clean assembleDebug --no-daemon
 
-      - name: Upload APK artifact
+      - name: Prepare APK artifact
         run: |
           mkdir -p artifacts
           APK_SRC="$(ls -1 apps/mobile/android/app/build/outputs/apk/debug/*.apk | head -n 1)"
           cp "$APK_SRC" "artifacts/photo-booth-app-${{ github.run_number }}.apk"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -372,13 +373,7 @@ jobs:
             echo "$IOS_CERT_P12_BASE64" | base64 --decode > ~/ios-signing/cert.p12
             echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > ~/ios-signing/profile.mobileprovision
 
-            PROFILE_NAME=$(python3 -c "
-import plistlib, subprocess, os
-p = os.path.expanduser('~/ios-signing/profile.mobileprovision')
-data = subprocess.check_output(['security', 'cms', '-D', '-i', p])
-plist = plistlib.loads(data)
-print(plist.get('Name', ''))
-")
+            PROFILE_NAME=$(python3 -c "import plistlib, subprocess, os; p = os.path.expanduser('~/ios-signing/profile.mobileprovision'); data = subprocess.check_output(['security', 'cms', '-D', '-i', p]); plist = plistlib.loads(data); print(plist.get('Name', ''))")
             if [ -z "$PROFILE_NAME" ]; then
               echo "Could not determine provisioning profile Name."
               exit 1
@@ -407,23 +402,7 @@ print(plist.get('Name', ''))
 
             EXPORT_DIR="$IOS_DIR/build/export"
             mkdir -p "$EXPORT_DIR"
-            cat > "$IOS_DIR/build/exportOptions.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>${IOS_EXPORT_METHOD:-ad-hoc}</string>
-  <key>signingStyle</key>
-  <string>manual</string>
-  <key>provisioningProfiles</key>
-  <dict>
-    <key>${IOS_BUNDLE_ID}</key>
-    <string>$PROFILE_NAME</string>
-  </dict>
-</dict>
-</plist>
-EOF
+            python3 -c "import plistlib; opts = {'method': '${IOS_EXPORT_METHOD:-ad-hoc}', 'signingStyle': 'manual', 'provisioningProfiles': {'${IOS_BUNDLE_ID}': '$PROFILE_NAME'}}; open('$IOS_DIR/build/exportOptions.plist', 'wb').write(plistlib.dumps(opts))"
             xcodebuild \
               -exportArchive \
               -archivePath "$IOS_DIR/build/$SCHEME.xcarchive" \
