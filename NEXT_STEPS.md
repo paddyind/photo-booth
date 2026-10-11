@@ -120,18 +120,30 @@ flowchart TD
      - Updated `.github/workflows/mobile-build.yml` default and fallback endpoints to current Wi-Fi IP `http://192.168.1.9:3201`.
      - **Fixed Android SDK Error**: Removed obsolete `'tools'` package from `android-actions/setup-android@v3` (which Google deprecated and removed from SDK repositories).
      - **Added iPad IPA Artifact Build**: Enabled dual-mode iOS building in `mobile-build.yml`: builds signed `.ipa` if developer certificates are configured; otherwise automatically compiles and packages an **unsigned device `.ipa`** (`photo-booth-app-unsigned-<run>.ipa`) that can be installed on an iPad via Sideloadly or AltStore using a free personal Apple ID.
-     - Added `photo-booth-web-bundle` artifact packaging to the workflow.
-  3. **Docker Init Stability (Completed)**:
+  3. **GHA Mobile Pipeline Execution (Completed — Run #38108540268)**:
+     - Fixed Android SDK setup by removing obsolete `'tools'` package.
+     - Fixed YAML multiline block scalar indentation.
+     - Enforced Node.js 24 compatibility runtime via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"`.
+     - **All 4 CI/CD jobs passed**:
+       * `Validate web bundle (prepare-www)`: Passed (9s)
+       * `Android APK`: Passed (1m51s)
+       * `iOS IPA (signed or unsigned)`: Passed (1m18s)
+       * `iOS Simulator (.app)`: Passed (1m39s)
+     - **Artifacts Generated & Ready for Testing**:
+       * **Android Debug APK**: `photo-booth-app-apk-38` (contains `photo-booth-app-38.apk`)
+       * **iPad / iOS Unsigned IPA**: `photo-booth-app-ipa-38` (contains `photo-booth-app-unsigned-38.ipa` for direct iPad installation via Sideloadly / AltStore)
+       * **Mobile Web Bundle**: `photo-booth-web-bundle-38` (for instant Safari / Chrome testing on iPad/tablet)
+       * **iOS Simulator App**: `ios-simulator-app-38`
+  4. **Docker Init Stability (Completed)**:
      - Added `init: true` to `docker-compose.yml` backend service, ensuring `tini` reaps child processes and prevents container zombie locks permanently.
 * **Next Active Execution Step**:
-  1. **Trigger GHA Mobile Build**:
-     - Push current commits to `origin/main` (Completed).
-     - Dispatch `Mobile Build (APK + IPA)` workflow on GitHub Actions.
-     - Download generated `photo-booth-app-apk`, `photo-booth-app-ipa` (for iPad), and `photo-booth-web-bundle` artifacts.
-  2. **Multi-Platform Device Validation Checklist**:
-     - **Laptop (Windows / Mac)**: `http://localhost:3200` (Verified working: live camera feed, options, and frames).
-     - **Mobile Phone (Android)**: Install the GHA debug APK on phone connected to local Wi-Fi. Verify camera snapshot, 10s pose countdown, and frame composition. Use in-app `Server ⚙️` button if IP changes.
-     - **iPad / Tablet (iOS / iPadOS)**: Install the generated `.ipa` using Sideloadly (or test web bundle in Safari). Verify touch responsiveness, camera permissions, and preview rendering.
+  1. **Download & Test Mobile Artifacts on Physical Devices**:
+     - **Android Phone**: Download `photo-booth-app-apk-38` from GitHub Actions run [38108540268](https://github.com/paddyind/photo-booth/actions/runs/38108540268). Install on Android phone on the same Wi-Fi. Verify camera live preview, 10s countdown, and frame composition with backend at `http://192.168.1.9:3201`.
+     - **iPad / Tablet**:
+       * *Option A (Sideloaded App)*: Download `photo-booth-app-ipa-38` and sideload onto iPad using [Sideloadly](https://sideloadly.io/) with a free personal Apple ID.
+       * *Option B (Safari Web App)*: Open `http://192.168.1.9:3200` directly in Safari on iPad, or add to Home Screen.
+     - **In-App Server Tuning**: If laptop Wi-Fi IP changes, tap `Server ⚙️` in the top bar to update the IP instantly without reinstalling.
+  2. **Proceed to Phase 4 (Multi-Tenancy & Data Isolation)**: Once multi-device capture is verified on local Wi-Fi, proceed with Phase 4 architecture before creating the new GCP account.
 * **Verification**: Photos captured on mobile and iPad connect to local Docker backend (`:3201`), compose with frames, and save to device gallery.
 
 ---
