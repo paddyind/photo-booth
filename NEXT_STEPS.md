@@ -103,31 +103,34 @@ flowchart TD
 
 ---
 
-### Phase 3: GHA Pipeline Verification & Multi-Platform Validation — 🚀 ACTIVE NEXT PHASE
-* **Goal**: Verify GitHub Actions CI triggers properly on pushed commits, build downloadable artifacts, and validate the photo booth working across Laptop, Mobile (Android), and iPad before touching any cloud infrastructure.
-* **Tasks**:
-  1. **Push Commits to Remote & Verify GHA**:
-     - Push commits `8a2e226` and `1fe567d` to `origin/main`.
-     - Confirm `.github/workflows/api-ci.yml` triggers automatically and passes all unit/integration tests and Docker image builds on GitHub's hosted runners.
-  2. **GHA Mobile & Web Artifact Pipeline**:
-     - Update `.github/workflows/mobile-build.yml` with default LAN endpoint (`http://192.168.1.2:3201`).
-     - Trigger workflow to build and upload downloadable artifacts:
-       * **Android Debug APK** (`photo-booth-app-apk`): Installable `.apk` for physical Android phones on Wi-Fi.
-       * **Web Bundle Artifact** (`photo-booth-web-bundle`): Configured static distribution for desktop/tablet browser testing.
-       * **iOS Simulator `.app`**: Validated artifact for iPad/iOS testing.
-  3. **Multi-Platform Device Validation Checklist**:
-     - **Laptop (Windows / Mac)**:
-       * Access `http://localhost:3200` (already verified working with active webcam and controls!).
-       * Test camera capture $\rightarrow$ frame selection $\rightarrow$ preview $\rightarrow$ download final.
-     - **Mobile Phone (Android)**:
-       * Install debug APK on phone connected to local Wi-Fi.
-       * Verify camera permission dialog, front/rear camera toggle, 10s pose countdown, frame overlay preview, and image saving to gallery.
-     * Alternatively, test via Chrome mobile at `http://192.168.1.2:3200`.
-     - **iPad / Tablet (iOS / iPadOS)**:
-       * Test web bundle or mobile app on iPad.
-       * Address iOS Safari secure-context requirement for `getUserMedia` (Capacitor native app operates in local secure context `https://localhost`, or use LAN proxy).
-       * Verify touch controls, landscape/portrait orientation switches, and canvas rendering.
-* **Verification**: All 3 devices (laptop, mobile phone, iPad) can capture, frame, and preview photos against the local backend.
+### Phase 3: GHA Pipeline Verification & Multi-Platform Validation — 🚀 IN PROGRESS (2026-10-11)
+* **Goal**: Enable fully dynamic multi-platform testing (Android phone, iPad, Laptop) against the local backend, generate mobile build artifacts via GitHub Actions, and validate camera capture and composition before provisioning cloud storage.
+* **Progress & Achievements**:
+  1. **Dynamic In-App Server URL (Completed)**:
+     - Implemented reactive `API_BASE` in `apps/web/src/index.html` backed by `localStorage.getItem("PHOTOBOOTH_CUSTOM_API_BASE")`.
+     - Added top navigation bar with live `Server [Online/Offline] ⚙️` health indicator badge.
+     - Added interactive **Server Connection Modal**:
+       * View current active API endpoint.
+       * Change API URL dynamically (e.g. `http://192.168.1.9:3201`, Cloudflare tunnel, or Cloud Run).
+       * Built-in `/health` test ping button with latency feedback.
+       * Quick presets for `Localhost (:3201)` and `This Wi-Fi (:3201)`.
+       * Automatically persists to `localStorage` and reloads options/frames without app restarts or rebuilds.
+     - Verified live on `http://localhost:3200` and synced to WSL container mount.
+  2. **GHA Workflow Mobile Updates (Completed)**:
+     - Updated `.github/workflows/mobile-build.yml` default and fallback endpoints to current Wi-Fi IP `http://192.168.1.9:3201`.
+     - Added `photo-booth-web-bundle` artifact packaging to the workflow.
+  3. **Docker Init Stability (Completed)**:
+     - Added `init: true` to `docker-compose.yml` backend service, ensuring `tini` reaps child processes and prevents container zombie locks permanently.
+* **Next Active Execution Step**:
+  1. **Trigger GHA Mobile Build**:
+     - Push current commits to `origin/main`.
+     - Dispatch `Mobile Build (APK + IPA)` workflow on GitHub Actions.
+     - Download generated `photo-booth-app-apk` and `photo-booth-web-bundle` artifacts.
+  2. **Multi-Platform Device Validation Checklist**:
+     - **Laptop (Windows / Mac)**: `http://localhost:3200` (Verified working: live camera feed, options, and frames).
+     - **Mobile Phone (Android)**: Install the GHA debug APK on phone connected to local Wi-Fi. Verify camera snapshot, 10s pose countdown, and frame composition. Use in-app `Server ⚙️` button if IP changes.
+     - **iPad / Tablet (iOS / iPadOS)**: Test web bundle or mobile app on iPad. Verify touch responsiveness, rotation, and preview rendering.
+* **Verification**: Photos captured on mobile and iPad connect to local Docker backend (`:3201`), compose with frames, and save to device gallery.
 
 ---
 

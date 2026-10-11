@@ -187,6 +187,17 @@
       <h1 class="visually-hidden">Photo Booth</h1>
 
       <div class="card">
+        <div class="top-nav" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:2px 4px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:16px;font-weight:700;color:#fff;letter-spacing:-0.02em;">📸 Photo Booth</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button id="serverConfigBtn" type="button" class="secondary" style="font-size:12px;padding:5px 12px;border-radius:16px;display:flex;align-items:center;gap:6px;" title="Configure Backend API Server URL">
+              <span id="serverDot" style="width:8px;height:8px;border-radius:50%;background:#ffa726;display:inline-block;"></span>
+              <span id="serverLabel">Server</span>
+            </button>
+          </div>
+        </div>
         <div class="video-stage">
           <video id="video" autoplay playsinline></video>
           <div id="captureCountdownOverlay" class="capture-countdown-overlay" hidden aria-hidden="true"></div>
@@ -273,13 +284,26 @@
       //   Cloud Run / Standard (80/443)→ API co-located on same origin
       //   Standalone  (port 8001)      → API co-located on same origin
       //   Direct uvicorn dev           → fallback to 8000
-      const API_BASE = window.PHOTOBOOTH_API_BASE || (() => {
+      function computeDefaultApiBase() {
         const p = location.port;
         if (p === "3200") return `${location.protocol}//${location.hostname}:3201`;
         if (p === "3443") return `${location.protocol}//${location.hostname}:3444`;
         if (p === "8001" || p === "" || p === "80" || p === "443") return location.origin;
         return `${location.protocol}//${location.hostname}:8000`;
-      })();
+      }
+
+      function getSavedApiBase() {
+        try {
+          const custom = localStorage.getItem("PHOTOBOOTH_CUSTOM_API_BASE");
+          if (custom && custom.trim()) return custom.trim().replace(/\/+$/, "");
+        } catch (_e) {}
+        if (window.PHOTOBOOTH_API_BASE && typeof window.PHOTOBOOTH_API_BASE === "string" && window.PHOTOBOOTH_API_BASE.trim()) {
+          return window.PHOTOBOOTH_API_BASE.trim().replace(/\/+$/, "");
+        }
+        return computeDefaultApiBase();
+      }
+
+      let API_BASE = getSavedApiBase();
       // Mobile builds can inject this to opt-in to showing 8x11.
       const ENABLE_8X11 =
         window.PHOTOBOOTH_ENABLE_8X11 === true ||
@@ -828,7 +852,23 @@
         }
       }
 
+      function updateServerStatusBadge(ok, detail) {
+        const dot = document.getElementById("serverDot");
+        const label = document.getElementById("serverLabel");
+        if (!dot || !label) return;
+        if (ok) {
+          dot.style.background = "#4caf50";
+          label.textContent = "Online";
+          label.title = `Connected to ${API_BASE} (${detail || "ok"})`;
+        } else {
+          dot.style.background = "#f44336";
+          label.textContent = "Offline";
+          label.title = `Cannot reach ${API_BASE} (${detail || "error"})`;
+        }
+      }
+
       function renderConnectivityHealth(ok, detail, ms) {
+        updateServerStatusBadge(ok, detail);
         if (!CONNECTIVITY_DEBUG) return;
         const el = document.getElementById("connectivityHealthLine");
         if (!el) return;
@@ -1602,6 +1642,7 @@
             checkApiHealth().catch(() => {});
           }, 15000);
         }
+        initServerModal();
         try {
           if (serverOk) {
             await loadOptions();
@@ -1618,9 +1659,162 @@
         }
       })();
 
+      function initServerModal() {
+        const modal = document.getElementById("serverModal");
+        const openBtn = document.getElementById("serverConfigBtn");
+        const closeBtn = document.getElementById("serverModalCloseBtn");
+        const input = document.getElementById("serverUrlInput");
+        const feedback = document.getElementById("serverTestFeedback");
+        const testBtn = document.getElementById("serverTestBtn");
+        const saveBtn = document.getElementById("serverSaveBtn");
+        const resetBtn = document.getElementById("serverResetBtn");
+        const presetLocalhost = document.getElementById("presetLocalhostBtn");
+        const presetLan = document.getElementById("presetLanBtn");
+
+        if (!modal || !openBtn) return;
+
+        function showModal() {
+          if (input) input.value = API_BASE;
+          if (feedback) feedback.style.display = "none";
+          modal.style.display = "flex";
+        }
+        function hideModal() {
+          modal.style.display = "none";
+        }
+
+        openBtn.addEventListener("click", showModal);
+        closeBtn?.addEventListener("click", hideModal);
+        modal.addEventListener("click", (e) => {
+          if (e.target === modal) hideModal();
+        });
+
+        presetLocalhost?.addEventListener("click", () => {
+          if (input) input.value = "http://localhost:3201";
+        });
+        presetLan?.addEventListener("click", () => {
+          const host = location.hostname && location.hostname !== "localhost" && location.hostname !== "127.0.0.1"
+            ? location.hostname
+            : "192.168.1.9";
+          if (input) input.value = `http://${host}:3201`;
+        });
+
+        testBtn?.addEventListener("click", async () => {
+          const testUrl = (input?.value || "").trim().replace(/\/+$/, "");
+          if (!testUrl) {
+            if (feedback) {
+              feedback.style.display = "block";
+              feedback.style.background = "#5c1d1d";
+              feedback.style.color = "#ffb3b3";
+              feedback.textContent = "Please enter a valid URL.";
+            }
+            return;
+          }
+          testBtn.disabled = true;
+          if (feedback) {
+            feedback.style.display = "block";
+            feedback.style.background = "#1a2a40";
+            feedback.style.color = "#90caf9";
+            feedback.textContent = `Pinging ${testUrl}/health...`;
+          }
+          try {
+            const start = Date.now();
+            const res = await fetch(`${testUrl}/health`, { mode: "cors" });
+            const ms = Date.now() - start;
+            if (res.ok) {
+              const data = await res.json();
+              if (feedback) {
+                feedback.style.background = "#1b4332";
+                feedback.style.color = "#95d5b2";
+                feedback.textContent = `✓ Connected in ${ms}ms! (service: ${data.service || "ok"})`;
+              }
+            } else {
+              if (feedback) {
+                feedback.style.background = "#5c1d1d";
+                feedback.style.color = "#ffb3b3";
+                feedback.textContent = `✕ Server replied with HTTP ${res.status} ${res.statusText}`;
+              }
+            }
+          } catch (err) {
+            if (feedback) {
+              feedback.style.background = "#5c1d1d";
+              feedback.style.color = "#ffb3b3";
+              feedback.textContent = `✕ Connection failed (${err.message}). Check that device is on same network and port 3201 is open.`;
+            }
+          } finally {
+            testBtn.disabled = false;
+          }
+        });
+
+        saveBtn?.addEventListener("click", async () => {
+          const newUrl = (input?.value || "").trim().replace(/\/+$/, "");
+          if (!newUrl) return;
+          try {
+            localStorage.setItem("PHOTOBOOTH_CUSTOM_API_BASE", newUrl);
+          } catch (_e) {}
+          API_BASE = newUrl;
+          hideModal();
+          setStatus(`Connecting to ${API_BASE}...`);
+          const ok = await checkApiHealth();
+          if (ok) {
+            setStatus("Connected to server.");
+            try {
+              await loadOptions();
+              await loadFrames(false);
+            } catch (_e) {}
+          } else {
+            setStatus(`Warning: could not reach ${API_BASE}`, true);
+          }
+        });
+
+        resetBtn?.addEventListener("click", async () => {
+          try {
+            localStorage.removeItem("PHOTOBOOTH_CUSTOM_API_BASE");
+          } catch (_e) {}
+          API_BASE = computeDefaultApiBase();
+          if (input) input.value = API_BASE;
+          hideModal();
+          setStatus(`Reset server to default: ${API_BASE}`);
+          const ok = await checkApiHealth();
+          if (ok) {
+            await loadOptions();
+            await loadFrames(false);
+          }
+        });
+      }
+
       window.addEventListener("beforeunload", () => {
         if (activeStream) stopCamera();
       });
     </script>
+
+    <!-- Server Connection Modal -->
+    <div id="serverModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+      <div style="background:#1e1e2f;color:#fff;border-radius:12px;max-width:440px;width:100%;padding:20px;box-shadow:0 12px 32px rgba(0,0,0,0.6);border:1px solid #333;box-sizing:border-box;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="margin:0;font-size:1.1rem;display:flex;align-items:center;gap:8px;">⚙️ Server Connection</h3>
+          <button id="serverModalCloseBtn" type="button" class="secondary" style="padding:4px 10px;font-size:14px;border-radius:6px;">✕</button>
+        </div>
+        <p style="font-size:12px;color:#a0aec0;margin:0 0 12px;line-height:1.45;">
+          Configure backend API address. Works on local Wi-Fi, hotspot, Cloudflare tunnel, and Cloud Run.
+        </p>
+        <label for="serverUrlInput" style="display:block;font-size:12px;font-weight:600;margin-bottom:6px;color:#cbd5e0;">Backend API Base URL</label>
+        <input id="serverUrlInput" type="text" placeholder="http://192.168.1.9:3201" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid #4a5568;background:#141420;color:#fff;box-sizing:border-box;font-family:monospace;font-size:13px;margin-bottom:10px;" />
+        
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+          <button type="button" id="presetLocalhostBtn" class="secondary" style="font-size:11px;padding:4px 8px;border-radius:6px;">Localhost (:3201)</button>
+          <button type="button" id="presetLanBtn" class="secondary" style="font-size:11px;padding:4px 8px;border-radius:6px;">This Wi-Fi (:3201)</button>
+        </div>
+
+        <div id="serverTestFeedback" style="display:none;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:12px;line-height:1.4;"></div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
+          <button id="serverResetBtn" type="button" class="secondary" style="font-size:12px;padding:8px 12px;border-radius:6px;">Reset Default</button>
+          <div style="display:flex;gap:8px;">
+            <button id="serverTestBtn" type="button" class="secondary" style="font-size:12px;padding:8px 12px;border-radius:6px;">Test</button>
+            <button id="serverSaveBtn" type="button" class="primary" style="font-size:12px;padding:8px 16px;border-radius:6px;">Save & Connect</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </body>
-  </html>
+</html>
