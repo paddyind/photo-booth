@@ -32,10 +32,23 @@ services:
       - "${WEB_PORT:-3200}:80"
     volumes:
       - ./apps/web/src:/usr/share/nginx/html:ro
+      - ./apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     environment:
       - VITE_API_BASE=http://localhost:${API_PORT:-3201}
     depends_on:
       - backend
+    networks:
+      - obs-net
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: photobooth-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://web:80
+    depends_on:
+      - web
+    networks:
+      - obs-net
 
 networks:
   obs-net:

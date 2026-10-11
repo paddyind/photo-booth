@@ -1167,6 +1167,14 @@
           setStatus("Camera already on");
           return;
         }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          const isHttpLan = !window.isSecureContext && location.protocol === "http:";
+          const msg = isHttpLan
+            ? "Camera blocked by Safari/browser: Accessing over plain HTTP on LAN disables camera APIs. Please use the HTTPS tunnel link or localhost."
+            : "Camera API (getUserMedia) not supported by this browser.";
+          setStatus(msg, true);
+          throw new Error(msg);
+        }
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: isRearMode() ? "environment" : "user" },
           audio: false,

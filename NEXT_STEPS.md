@@ -134,17 +134,25 @@ flowchart TD
        * **iPad / iOS Unsigned IPA**: `photo-booth-app-ipa-38` (contains `photo-booth-app-unsigned-38.ipa` for direct iPad installation via Sideloadly / AltStore)
        * **Mobile Web Bundle**: `photo-booth-web-bundle-38` (for instant Safari / Chrome testing on iPad/tablet)
        * **iOS Simulator App**: `ios-simulator-app-38`
-  4. **Docker Init Stability (Completed)**:
-     - Added `init: true` to `docker-compose.yml` backend service, ensuring `tini` reaps child processes and prevents container zombie locks permanently.
+  5. **Unified Reverse Proxy & Zero-Config HTTPS Tunnel for iPad / Mobile Testing (Completed — 2026-10-11)**:
+     - **Root Cause of Safari Error**: WebKit/Safari enforces the W3C `[SecureContext]` standard: `navigator.mediaDevices` and `getUserMedia` are strictly disabled over plain `http://` on local IP addresses (`http://192.168.1.x`).
+     - **Nginx Reverse Proxy (`apps/web/nginx.conf`)**:
+       * Configured Nginx to serve the web SPA and reverse-proxy backend endpoints (`/health`, `/options`, `/frames`, `/compose`, `/print`, `/sessions`, `/admin`) directly to `backend:8000`.
+       * Eliminates CORS and Mixed-Content restrictions completely.
+     - **Zero-Config Cloudflare Tunnel Service (`photobooth-tunnel`)**:
+       * Added `tunnel` service (`cloudflare/cloudflared:latest`) into `docker-compose.yml`.
+       * Automatically generates a valid, trusted public HTTPS endpoint (`https://sometimes-sense-basin-apt.trycloudflare.com`).
+       * **Zero Sideloadly / iTunes / Apple ID setup required on Windows**.
+       * Works directly in Safari on iPad, iPhone, and Android with full native camera streaming permissions.
 * **Next Active Execution Step**:
-  1. **Download & Test Mobile Artifacts on Physical Devices**:
-     - **Android Phone**: Download `photo-booth-app-apk-38` from GitHub Actions run [38108540268](https://github.com/paddyind/photo-booth/actions/runs/38108540268). Install on Android phone on the same Wi-Fi. Verify camera live preview, 10s countdown, and frame composition with backend at `http://192.168.1.9:3201`.
-     - **iPad / Tablet**:
-       * *Option A (Sideloaded App)*: Download `photo-booth-app-ipa-38` and sideload onto iPad using [Sideloadly](https://sideloadly.io/) with a free personal Apple ID.
-       * *Option B (Safari Web App)*: Open `http://192.168.1.9:3200` directly in Safari on iPad, or add to Home Screen.
-     - **In-App Server Tuning**: If laptop Wi-Fi IP changes, tap `Server ⚙️` in the top bar to update the IP instantly without reinstalling.
-  2. **Proceed to Phase 4 (Multi-Tenancy & Data Isolation)**: Once multi-device capture is verified on local Wi-Fi, proceed with Phase 4 architecture before creating the new GCP account.
-* **Verification**: Photos captured on mobile and iPad connect to local Docker backend (`:3201`), compose with frames, and save to device gallery.
+  1. **Instant iPad / Mobile Validation**:
+     - **iPad / Tablet (Safari)**: Open `https://sometimes-sense-basin-apt.trycloudflare.com` on the iPad.
+     - When Safari prompts for camera permissions, tap **Allow**.
+     - Verify live camera preview, frame selection, 10s countdown, and capture composition.
+     - Optional: Tap Safari Share icon $\rightarrow$ **Add to Home Screen** for a fullscreen photo booth tablet kiosk.
+     - **Android Phone**: Open the same HTTPS link in Chrome, or install the debug APK `photo-booth-app-38.apk`.
+  2. **Proceed to Phase 4 (Multi-Tenancy & Data Isolation)**: Once multi-device capture is verified, proceed with Phase 4 architecture and GCS bucket structure before creating the new GCP account.
+* **Verification**: Photos captured on iPad and mobile stream via camera, connect to backend, compose with frames, and generate downloadable final prints.
 
 ---
 
